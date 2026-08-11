@@ -119,6 +119,9 @@ příkaz `new-window`.
 
 ## Sessions
 
+Session je ejvyšší úroveň skupiny — jedna "pracovní plocha". Obsahuje jedno nebo víc oken
+(windows).
+
 ### Ze shellu
 
 | Příkaz | Co dělá |
@@ -153,6 +156,8 @@ příkaz `new-window`.
 
 ## Windows
 
+Window je okno uvnitř session — obdoba záložky (tabu) v terminálu.
+
 | Zkratka | Co dělá |
 | --- | --- |
 | `prefix c` | Nové okno |
@@ -179,6 +184,8 @@ Užitečné příkazy:
 ---
 
 ## Panes
+
+Pane je rozdělená část okna — jeden konkrétní terminál s jedním shellem.
 
 ### Vytváření a rušení
 
@@ -317,8 +324,8 @@ dají vynechat — `-t prace` = aktivní okno té session.
 
 ## Konfigurace
 
-Konfigurace je v `~/.tmux.conf` (nebo `~/.config/tmux/tmux.conf`). Rozumný
-základ:
+Konfigurace je v `~/.tmux.conf` (nebo `~/.config/tmux/tmux.conf`).
+Rozumný základ:
 
 ```tmux
 # Prefix na Ctrl-a (jako screen), Ctrl-b zůstává jako záloha
