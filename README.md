@@ -145,6 +145,7 @@ příkaz `new-window`.
 | `prefix (` | Předchozí session |
 | `prefix )` | Další session |
 | `prefix L` | Přepne na poslední (naposledy použitou) session |
+| `prefix D` | Seznam připojených klientů (dají se odpojit) |
 | `:new-session -s jmeno` | Nová session bez opuštění tmuxu |
 | `:kill-session` | Zabije aktuální session |
 
@@ -181,16 +182,22 @@ Užitečné příkazy:
 
 ### Vytváření a rušení
 
-| Zkratka | Co dělá |
-| --- | --- |
-| `prefix %` | Rozdělí pane svisle (vedle sebe) |
-| `prefix "` | Rozdělí pane vodorovně (pod sebe) |
-| `prefix x` | Zavře pane (ptá se) |
-| `prefix !` | Vytáhne pane do samostatného okna |
-| `prefix z` | Zoom — zvětší pane na celé okno / vrátí zpět |
+| Zkratka | Příkaz | Co dělá |
+| --- | --- | --- |
+| `prefix %` | `split-window -h` | Rozdělí pane na levý a pravý |
+| `prefix "` | `split-window -v` | Rozdělí pane na horní a dolní |
+| `prefix x` | `kill-pane` | Zavře pane (ptá se) |
+| `prefix !` | `break-pane` | Vytáhne pane do samostatného okna |
+| `prefix z` | `resize-pane -Z` | Zoom — zvětší pane na celé okno / vrátí zpět |
 
-Mnemotechnika: `%` má svislou čáru → svislý split. `"` má dvě čárky nad sebou →
-vodorovný split.
+> **Pozor na terminologii.** tmux nazývá split podle *směru dělící čáry z pohledu
+> parametru*, ne podle toho, jak to vypadá. `-h` (horizontal split, `%`) dá panes
+> **vedle sebe** s **svislou** dělící čarou. `-v` (vertical split, `"`) dá panes
+> **pod sebe**. Je to opačně, než většina lidí čeká.
+>
+> Mnemotechnika podle tvaru znaku funguje spolehlivě: `%` obsahuje svislou čáru →
+> panes vedle sebe. `"` má dvě čárky vedle sebe nahoře → dělící čára vodorovná,
+> panes pod sebou.
 
 Split se startovním adresářem aktuálního panu:
 
@@ -209,6 +216,13 @@ Split se startovním adresářem aktuálního panu:
 | `prefix q` | Zobrazí čísla panes; stiskem čísla přepneš |
 | `prefix {` | Prohodí pane s předchozím |
 | `prefix }` | Prohodí pane s dalším |
+| `prefix Ctrl-o` | Zrotuje panes v okně |
+| `prefix m` | Označí pane (marked pane) |
+| `prefix M` | Zruší označení |
+
+Označený pane (`prefix m`) slouží jako výchozí zdroj pro `join-pane`,
+`swap-pane` a `move-pane`. Typické použití — přesun panu z jiného okna k sobě:
+označíš ho `prefix m`, přepneš se kam chceš a dáš `:join-pane`.
 
 ### Velikost a rozvržení
 
@@ -251,14 +265,25 @@ V copy mode s vi klávesami (`setw -g mode-keys vi`):
 | `g` / `G` | Začátek / konec historie |
 | `H` / `M` / `L` | Horní / prostřední / dolní řádek obrazovky |
 
-Kopírování do systémové schránky (macOS):
+Kopírování do systémové schránky — tmux má vlastní buffery oddělené od schránky
+systému, takže výběr je potřeba prohnat externím nástrojem:
 
 ```tmux
 bind -T copy-mode-vi v send -X begin-selection
+
+# Linux, X11
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel "xclip -selection clipboard"
+
+# Linux, Wayland
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel "wl-copy"
+
+# macOS
 bind -T copy-mode-vi y send -X copy-pipe-and-cancel "pbcopy"
 ```
 
-Na Linuxu místo `pbcopy` použij `xclip -selection clipboard` nebo `wl-copy`.
+Alternativně `set -g set-clipboard on` — tmux pak posílá výběr do schránky přes
+escape sekvenci OSC 52, což funguje i přes SSH, ale terminál to musí podporovat
+a mít povolené.
 
 ---
 
