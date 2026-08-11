@@ -18,6 +18,7 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 - [Konfigurace](#konfigurace)
 - [tmux a Claude Code](#tmux-a-claude-code)
 - [Pluginy](#pluginy)
+- [Alternativy a příbuzné nástroje](#alternativy-a-příbuzné-nástroje)
 
 ---
 
@@ -1148,3 +1149,180 @@ nainstalovat jediný plugin, je to tenhle.
 
 Obvyklá rada: začni bez pluginů a sáhni po TPM, až budeš chtít resurrect nebo
 thumbs.
+
+---
+
+## Alternativy a příbuzné nástroje
+
+tmux nebyl první a není poslední. Rychlá mapa, co je konkurence, co doplněk
+z jiné vrstvy a co jen nadstavba:
+
+| Nástroj | Co to je | Vztah k tmuxu |
+| --- | --- | --- |
+| [GNU screen](https://www.gnu.org/software/screen/) | Starší multiplexer (1987) | Předchůdce; dnes hlavně sériové konzole |
+| [zellij](https://zellij.dev/) | Moderní multiplexer v Rustu | Přímý konkurent s opačnou filozofií |
+| [tmux-rs](https://github.com/richardscollin/tmux-rs) | Přepis tmuxu do Rustu | Experiment, zatím alpha |
+| [dtach](https://github.com/crigler/dtach), [abduco](https://github.com/martanne/abduco), [zmx](https://github.com/neurosnap/zmx) | Jen detach/attach | Minimalistický výsek jedné funkce |
+| [byobu](https://www.byobu.org/) | Obal nad tmuxem/screenem | Nadstavba, uvnitř běží tmux |
+| [mosh](https://mosh.org/), [Eternal Terminal](https://eternalterminal.dev/) | Odolnější spojení místo SSH | Jiná vrstva, s tmuxem se kombinuje |
+| [tmuxinator](https://github.com/tmuxinator/tmuxinator), [tmuxp](https://github.com/tmux-python/tmuxp) | Session managery | Nadstavba, jen skriptují tmux |
+| WezTerm, kitty, iTerm2 | Terminály s vlastním multiplexingem | Částečné překrytí funkcí |
+
+### GNU screen
+
+Předchůdce z roku 1987 (tmux je z 2007) a důvod, proč si půlka světa
+přemapovává prefix na `Ctrl-a` — to je defaultní prefix screenu. Základní trik
+je stejný: proces na pozadí drží terminál, klient se odpojuje (`Ctrl-a d`)
+a připojuje (`screen -r`).
+
+Hlavní rozdíly:
+
+- **Architektura.** screen = jeden proces na session. tmux má jeden server na
+  všechny sessions, a proto i příkazy, které vidí přes sessions
+  (`lsp -a`, `link-window`, grouped sessions, …).
+- **Splity patří klientovi.** Rozdělení okna na regiony se ve screenu detachem
+  zahodí — po připojení začínáš zase s jedním. tmux má panes uložené v session,
+  layout přežije. (Novější screen má `layout save`, ale je to znát, že je to
+  přilepené dodatečně.)
+- **Skriptovatelnost.** `screen -X stuff 'text'` a `hardcopy` proti
+  `send-keys`, `capture-pane`, formátům a `wait-for` — tady je tmux
+  o generaci dál; celá sekce
+  [Automatizace a skriptování](#automatizace-a-skriptování) nemá ve screenu
+  obdobu.
+- **Vývoj.** screen léta spal; verze 5.0 (srpen 2024) přinesla přepsanou
+  autentizaci a truecolor, ale koncepčně ho k tmuxu nepřiblížila.
+
+Co screen umí a tmux ne (nebo hůř):
+
+- **Sériová konzole:** `screen /dev/ttyUSB0 115200` — screen jako terminálový
+  program pro embedded desky a síťové krabice. Dnes nejčastější důvod, proč ho
+  mít nainstalovaný vedle tmuxu.
+- **Multiuser napříč OS účty** býval argument pro screen (`multiuser on`
+  + ACL, vyžaduje setuid binárku); tmux od 3.3 umí totéž bez setuid přes
+  sdílený socket (viz [Víc serverů vedle sebe](#víc-serverů-vedle-sebe))
+  a `server-access` (i read-only).
+
+Jinak není moc důvod po screenu sahat — leda že na stroji už je a tmux tam
+nedoinstaluješ.
+
+### zellij
+
+Nejvážnější současný konkurent, [zellij](https://zellij.dev/). Napsaný
+v Rustu a jde přesně opačným směrem než tmux — místo minimálního defaultu
+„baterie součástí balení“:
+
+- **UI napovídá.** Status bar ukazuje, které klávesy v aktuálním módu
+  fungují — bariéra vstupu je výrazně nižší než u tmuxu.
+- **Floating panes** jako první třída (tmux má
+  [popup](#popup-plovoucí-okno-nad-layoutem), ale musíš si ho nabindovat).
+- **Session resurrection vestavěná** — layout a příkazy přežijí i reboot;
+  v tmuxu na to potřebuješ [tmux-resurrect](#nejpoužívanější-pluginy).
+- **Layouty jako soubory** (formát KDL) ve verzovacím systému — role, kterou
+  u tmuxu hraje tmuxinator.
+- **Skutečné plugin API** — pluginy jsou WebAssembly, ne shell skripty jako
+  [u tmuxu](#pluginy).
+- **Web klient** — novější verze umí session vystavit do prohlížeče (se
+  sdílením přes URL).
+
+Cena za to: znatelně víc paměti, defaultní zkratky žerou spoustu `Ctrl`
+kombinací (kolidují s shellem i editory — existuje „non-colliding“ preset
+a locked mód), skriptování zvenčí (`zellij action`) zdaleka nedosahuje tmux
+formátů a na cizím serveru zellij skoro jistě nebude, tmux skoro jistě ano.
+
+### tmux-rs
+
+Kuriozita pro úplnost: [tmux-rs](https://github.com/richardscollin/tmux-rs)
+je přepis tmuxu (67 000 řádků C → ~81 000 řádků Rustu) — na rozdíl od zellij
+ne nový design, ale věrný port. Hobby projekt jednoho autora, zatím alpha:
+skoro celý `unsafe` a se známými pády, na běžné používání to není. Česky
+o něm psal
+[root.cz](https://www.root.cz/zpravicky/tmux-rs-je-nova-implementace-multiplexeru-tmux-prepsana-v-jazyce-rust/).
+
+### dtach, abduco, zmx
+
+Opačný extrém: jen detach/attach a nic víc. Žádná okna, splity, status bar
+ani scrollback (ten nechávají na terminálu).
+[dtach](https://github.com/crigler/dtach) je pár set řádků C;
+[abduco](https://github.com/martanne/abduco) je novější provedení téže
+myšlenky (od autora [dvtm](https://github.com/martanne/dvtm), se kterým se
+skládá po unixovsku: abduco = sessions, dvtm = dlaždice). Hodí se, když
+chceš jen „ať to přežije odpojení“ s nulovou režií — typicky obalit jeden
+dlouhoběžící proces — a multiplexer je ti zbytečný.
+
+Moderní přírůstek téže kategorie je [zmx](https://github.com/neurosnap/zmx)
+(Zig, ~1000 řádků, démon na session): taky jen attach/detach, ale při
+připojení umí obnovit obsah obrazovky i scrollback — terminál emuluje přes
+libghostty-vt, knihovnu vytaženou z terminálu Ghostty. Řeší tím hlavní
+slabinu dtache (po attachi je obrazovka prázdná, dokud program něco
+nepřekreslí). Ve stejné nice žije i [shpool](https://github.com/shell-pool/shpool)
+od Googlu.
+
+### byobu
+
+Není alternativa, ale obal nad tmuxem (default) nebo screenem: F-klávesy
+místo prefixu, hotový status bar s widgety (load, baterie, aktualizace, …).
+Vyrostl z „screen-profiles“ Dustina Kirklanda z Canonicalu, jméno má podle
+japonské skládací zástěny. Uvnitř běží normální tmux, takže všechno z tohohle
+taháku platí — jen se s byobu občas přetahuje o konfiguraci. Dobrá volba pro
+někoho, kdo se tmux učit nechce; česky
+[Byobu: ještě o kousek lepší terminál](https://www.root.cz/clanky/byobu-jeste-o-kousek-lepsi-terminal/)
+na root.cz.
+
+### Terminály s vestavěným multiplexingem
+
+- **[WezTerm](https://wezterm.org/)** má plnohodnotný vestavěný multiplexer:
+  mux server, „SSH domény“, detach a attach přežije restart GUI. Ze všech
+  terminálů nejblíž tomu nahradit tmux úplně.
+- **[kitty](https://sw.kovidgoyal.net/kitty/)** umí taby, splity a layouty,
+  ale žádný detach; autor kombinaci s tmuxem otevřeně nedoporučuje a má
+  třecí plochy (např. kitty graphics protokol skrz tmux).
+- **[Ghostty](https://ghostty.org/)** je z tohohle pohledu záměrně „jen“
+  terminál: nativní splity a taby má, ale layout nepřežije restart aplikace
+  a detach/attach neexistuje — persistenci vědomě nechává na tmuxu. Zajímavý
+  je ale jako stavebnice: emulace terminálu se odděluje do knihovny
+  libghostty, a nad ní vznikají nástroje jako
+  [zmx](#dtach-abduco-zmx).
+- **[Tilix](https://gnunn1.github.io/tilix-web/)** (GTK, Linux) umí dlaždicové
+  splity, synchronizaci vstupu a „sessions“ — ty jsou ale jen uložené layouty
+  na disku: žádný detach/attach, se zavřením aplikace všechno končí. Projekt
+  je navíc v režimu minimální údržby a hledá maintainery.
+- **iTerm2** jde opačnou cestou — `tmux -CC` ukazuje tmux okna jako nativní
+  taby (viz výhrada ve [Fullscreen renderingu](#fullscreen-rendering)).
+
+Společný háček: je to přesný opak přenositelnosti z
+[Na co je to dobré](#na-co-je-to-dobré) — splity a sessions máš jen tam, kde
+běží ten konkrétní terminál, a na serveru bez GUI ti nepomůžou (WezTerm mux
+server je výjimka, ale vyžaduje WezTerm i na druhé straně).
+
+### mosh a Eternal Terminal: jiná vrstva
+
+[mosh](https://mosh.org/) neřeší sessions, ale spojení — je to náhrada SSH
+pro interaktivní práci, ne multiplexer:
+
+- běží po UDP a přežije změnu IP, uspání laptopu i výpadek sítě — spojení se
+  samo obnoví,
+- lokální predikce psaní: na lince s vysokou latencí vidíš, co píšeš, hned.
+
+Co záměrně neumí: scrollback (synchronizuje jen aktuální obraz obrazovky),
+detach/attach (session je svázaná s jedním klientem, z jiného stroje se k ní
+nepřipojíš), port forwarding ani agent forwarding — a potřebuje otevřené UDP
+porty 60000–61000.
+
+Proto klasická kombinace **mosh + tmux**: mosh drží spojení (roaming,
+latence), tmux uvnitř dodá scrollback, okna a možnost připojit se odkudkoli.
+Nejsou to konkurenti, ale vrstvy.
+
+[Eternal Terminal](https://eternalterminal.dev/) (`et`) je obdoba po TCP:
+taky automatický reconnect, navíc zachovává nativní scrollback; na serveru
+potřebuje běžící démon. I s ním se tmux běžně kombinuje.
+
+### Session managery
+
+[tmuxinator](https://github.com/tmuxinator/tmuxinator),
+[tmuxp](https://github.com/tmux-python/tmuxp) a
+[smug](https://github.com/ivaaaan/smug): YAML popis projektu (okna, panes,
+příkazy) → jedním příkazem postavená session. Všechny jen volají totéž API
+jako sekce [Automatizace a skriptování](#automatizace-a-skriptování) —
+`new-window`, `send-keys`… tmuxp navíc umí `tmuxp freeze`: z běžící session
+vyrobí YAML. Než po nich sáhneš, zvaž, jestli nestačí
+`tmux new -A -s projekt -c ~/projekt` v aliasu nebo krátký shell skript.
