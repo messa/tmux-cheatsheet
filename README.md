@@ -18,6 +18,32 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 
 ## Slovníček pojmů
 
+Jak to do sebe zapadá:
+
+```text
+     ┌────────────┐            ┌────────────┐
+     │  client A  │            │  client B  │
+     │ (terminál) │            │ (SSH)      │
+     └─────┬──────┘            └─────┬──────┘
+           │ attach / detach         │
+           ▼                         ▼
+┌ server (proces na pozadí) ─────────────────────────────┐
+│                                                        │
+│ ┌ session: web ──────────────────┐ ┌ session: api ───┐ │
+│ │                                │ │                 │ │
+│ │ ┌ window 0 ─┐ ┌ window 1 ────┐ │ │ ┌ window 0 ───┐ │ │
+│ │ │           │ │      │ pane  │ │ │ │             │ │ │
+│ │ │   pane    │ │ pane ├───────┤ │ │ │    pane     │ │ │
+│ │ │           │ │      │ pane  │ │ │ │             │ │ │
+│ │ └───────────┘ └──────┴───────┘ │ │ └─────────────┘ │ │
+│ └────────────────────────────────┘ └─────────────────┘ │
+└────────────────────────────────────────────────────────┘
+```
+
+Každý pane je samostatný terminál, ve kterém běží (typicky) shell. Oba klienti
+se také mohou připojit ke stejné session naráz — viz
+[grouped sessions](#víc-klientů-každý-na-jiném-okně-grouped-sessions).
+
 ### server
 
 Proces, který běží na pozadí a drží všechny sessions, windows a panes. Startuje se
