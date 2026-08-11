@@ -440,6 +440,7 @@ Příkazy do shellu:
 tmux list-keys                    # všechny zkratky
 tmux list-commands                # všechny příkazy
 tmux show-options -g              # globální nastavení
+tmux display-message -a           # všechny formátovací proměnné i s hodnotami
 tmux source-file ~/.tmux.conf     # znovunačte konfiguraci
 tmux new -s prace 'htop'          # session rovnou spustí příkaz
 
@@ -556,19 +557,46 @@ setw -g window-status-current-format " #I:#W "
 
 `window-status-format` je jedna položka v seznamu oken uprostřed,
 `window-status-current-format` totéž pro aktuální okno. Ve formátech se dají
-použít krátké proměnné:
+použít proměnné, devět nejčastějších má i krátký alias:
 
-| Zápis | Význam |
-| --- | --- |
-| `#S` | Jméno session |
-| `#I` | Index okna |
-| `#W` | Jméno okna |
-| `#P` | Index panu |
-| `#F` | Příznaky okna — `*` aktivní, `-` předchozí, `Z` zoomnuté, `!` bell |
-| `#H` / `#h` | Hostname / hostname bez domény |
-| `#{…}` | Dlouhý zápis (`#{session_name}`, `#{pane_current_path}`, … — viz [Výpisy](#vlastní-formát--f)) |
-| `#[fg=…,bg=…,bold]` | Změna stylu do konce řetězce, `#[default]` vrátí zpět |
-| `%H:%M`, `%d.%m.` | strftime — čas a datum |
+| Krátce | Dlouze | Význam |
+| --- | --- | --- |
+| `#S` | `#{session_name}` | Jméno session |
+| `#I` | `#{window_index}` | Index okna |
+| `#W` | `#{window_name}` | Jméno okna |
+| `#F` | `#{window_flags}` | Příznaky okna — `*` aktivní, `-` předchozí, `Z` zoomnuté, `!` bell |
+| `#P` | `#{pane_index}` | Index panu |
+| `#D` | `#{pane_id}` | Unikátní ID panu (`%3`) |
+| `#T` | `#{pane_title}` | Titulek panu |
+| `#H` | `#{host}` | Hostname |
+| `#h` | `#{host_short}` | Hostname bez domény |
+| — | `#{pane_current_path}` | Pracovní adresář panu |
+
+Aliasů je přesně těch devět. Zbytek (a je jich kolem tří stovek —
+`pane_current_path`, `window_zoomed_flag`, `client_width`, …) se píše jen
+dlouze. Seznam s aktuálními hodnotami vypíše `tmux display-message -a`, popis
+je v `man tmux` v sekci FORMATS.
+
+> **Alias nejde použít v modifikátoru.** Zarovnání, náhrada i podmínka berou
+> jen dlouhý název proměnné — s aliasem vyjde prázdno, protože tmux ho tam
+> hledá jako jméno proměnné:
+>
+> ```text
+> # session se jmenuje "web"
+> #{p14:session_name}   →  "web           "
+> #{p14:#S}             →  "              "   # zůstane jen padding
+> ```
+>
+> Krátká forma je čistá substituce, do `status-left` nebo
+> `window-status-format` stačí. Jakmile potřebuješ `#{p22:…}`,
+> `#{s|…|…|:…}` nebo `#{?…,…,…}` (viz [Vlastní formát](#vlastní-formát--f)),
+> piš dlouhý název.
+
+Kromě proměnných se ve status baru používá:
+
+- `#[fg=…,bg=…,bold]` — změna stylu do konce řetězce, `#[default]` vrátí zpět
+- `%H:%M`, `%d.%m.` — status řetězce procházejí strftime, takže čas a datum
+- `##` — literální `#` (proto `window_flags` vrací `#` zdvojené)
 
 `colour0`–`colour255` je 256barevná paleta; se zapnutým RGB (viz výše) můžeš
 psát i `#rrggbb`. Status bar se dá přesunout nahoru přes
