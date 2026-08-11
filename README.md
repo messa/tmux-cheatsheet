@@ -42,6 +42,11 @@ Zbytek jsou věci, které dostaneš, když už ho máš:
 - **Skriptování zvenčí.** `tmux send-keys -t prace 'make test' Enter` — jeden
   skript nastartuje celé prostředí nebo pošle vstup běžící aplikaci. Na tomhle
   stojí tmuxinator i [agent teams Claude Code](#agent-teams-ve-split-panes).
+- **Testování věcí, které chtějí opravdový terminál.** V CI žádné tty není —
+  tmux ho dodá: headless server, pevně daná velikost okna a `capture-pane`,
+  kterým si přečteš, co je na obrazovce. Takhle se testují TUI aplikace,
+  prompty a shellové integrace. Viz
+  [Automatizace a skriptování](#automatizace-a-skriptování).
 - **Sdílení session.** Dva lidé na jednom stroji, oba vidí totéž — párové
   programování bez screensharingu. Viz také
   [sledování bez možnosti zásahu](#sledování-bez-možnosti-zásahu).
@@ -718,6 +723,13 @@ tmux -L ci has-session -t app 2>/dev/null || tmux -L ci new-session -d -s app
   `sleep`.
 - **Úklid.** `tmux -L ci kill-server` na konci a v `trap`, jinak ti server
   přežije skript.
+
+Dohromady to znamená, že testování přes tmux sedí na „proběhlo to a na
+obrazovce je zhruba tohle“ — smoke testy, ověření, že se TUI nastartovalo
+a reaguje na klávesy, kontrola návratového kódu. Na jemné asserty nad výstupem
+je křehké: čteš snímek obrazovky, ne stream, a mezi „pošli klávesu“ a „přečti
+výsledek“ je vždycky nějaké časování. Co jde otestovat bez terminálu, testuj
+bez něj.
 
 ---
 
