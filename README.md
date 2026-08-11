@@ -16,6 +16,7 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 - [Ostatní užitečné](#ostatní-užitečné)
 - [Konfigurace](#konfigurace)
 - [tmux a Claude Code](#tmux-a-claude-code)
+- [Pluginy](#pluginy)
 
 ---
 
@@ -91,30 +92,7 @@ make build; tmux wait-for -S build-hotov
 
 Blokuje, dokud nepřijde `-S` se stejným jménem kanálu. Deterministická
 synchronizace mezi panes, okny a skripty — tam, kde by jinak byl `sleep`
-a hádání.
-
-Kanál je vázaný na **server**, ne na session nebo okno (proto `wait-for` jako
-jediný příkaz nemá `-t`). Signalizovat i čekat může kdokoli, kdo mluví se
-stejným serverem — pane v jakékoli session i skript úplně mimo tmux. Blokuje
-se přitom jen proces `tmux wait-for`, žádný pane tím nestojí. Jiný server
-(`tmux -L …`) kanál nevidí a restart serveru kanály smaže.
-
-Přesná sémantika (tmux 3.5):
-
-| Situace | Co se stane |
-| --- | --- |
-| `-S` a někdo čeká | Probudí **všechny** čekající naráz |
-| `-S` a nikdo nečeká | Uloží se jeden „budíček“ — příští čekání se vrátí hned a spotřebuje ho |
-| Druhý `-S`, pořád nikdo nečeká | **Uložený budíček zruší** — signály se neskládají do fronty |
-
-Vzor „1× signalizuj, 1× čekej“ je tedy bezpečný v obou pořadích; složitější
-stav jedním kanálem nepřenášej.
-
-`-L`/`-U` navíc umí zámek: `-L` se vrátí hned po získání a zámek drží kanál,
-ne proces — přežije i konec klienta, který ho vzal. Další `-L` se řadí do
-fronty a `-U` předá zámek prvnímu ve frontě — bohužel i mrtvému, takže
-zabitý čekatel (Ctrl-C, `timeout`) nechá kanál zamčený. Na robustní „neběž
-dvakrát“ mezi skripty je proto lepší `flock(1)`.
+a hádání. `-L`/`-U` navíc umí zámek (lock/unlock).
 
 ### Popup: plovoucí okno nad layoutem
 
@@ -923,3 +901,78 @@ Když po skončení session zůstane viset osiřelá tmux session:
 tmux ls
 tmux kill-session -t <jmeno>
 ```
+
+---
+
+## Pluginy
+
+tmux **žádné plugin API nemá**. „Plugin“ je obyčejný git repozitář se shell
+skripty, které za tebe volají tytéž příkazy, jaké píšeš do `~/.tmux.conf`:
+`bind-key`, `set-option`, `set-hook`. Stojí to na třech vestavěných
+mechanismech:
+
+1. **`run-shell`** — tmux příkaz, který spustí externí skript. Plugin má
+   v kořeni spustitelný soubor `*.tmux` a ten při načtení konfigurace
+   „doinstaluje“ svoje bindingy a options.
+2. **User options `@nazev`** — tmux dovolí nastavit libovolnou volbu začínající
+   `@` (`set -g @demo ahoj`, přečte `show -g @demo`). Přes ně se pluginy
+   konfigurují.
+3. **`#(prikaz)` ve status baru** — formáty umí spustit shell příkaz a vložit
+   jeho výstup. Takhle fungují všechny status-bar moduly (baterie, CPU, …).
+
+### TPM
+
+Pluginy se obvykle spravují přes [TPM](https://github.com/tmux-plugins/tpm)
+(tmux plugin manager) — sám o sobě jen krátký shell skript:
+
+```bash
+git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+```
+
+```tmux
+# ~/.tmux.conf
+set -g @plugin 'tmux-plugins/tpm'
+set -g @plugin 'tmux-plugins/tmux-resurrect'
+
+run '~/.tmux/plugins/tpm/tpm'    # musí být poslední řádek konfigurace
+```
+
+| Zkratka | Co dělá |
+| --- | --- |
+| `prefix I` | Naklonuje pluginy do `~/.tmux/plugins/` a aktivuje je |
+| `prefix U` | Aktualizuje pluginy (git pull) |
+| `prefix Alt-u` | Smaže pluginy, které už v konfiguraci nejsou |
+
+### Nejpoužívanější pluginy
+
+| Plugin | Co dělá |
+| --- | --- |
+| [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) | Uloží a obnoví sessions/okna/panes **přes restart stroje** (`prefix Ctrl-s` / `Ctrl-r`) |
+| [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum) | Nadstavba resurrectu — ukládá automaticky a obnoví při startu serveru |
+| [tmux-yank](https://github.com/tmux-plugins/tmux-yank) | Kopírování do systémové schránky napříč OS |
+| [vim-tmux-navigator](https://github.com/christoomey/vim-tmux-navigator) | `Ctrl-h/j/k/l` přechází bezešvě mezi Vim splity a tmux panes (párový plugin do Vimu) |
+| [tmux-thumbs](https://github.com/fcsonline/tmux-thumbs), [tmux-fingers](https://github.com/Morantron/tmux-fingers) | Vimium styl: přes obrazovku se rozsvítí hinty a jednou klávesou zkopíruješ URL/hash/cestu |
+| [extrakto](https://github.com/laktak/extrakto), [tmux-fzf](https://github.com/sainnhe/tmux-fzf) | fzf výběr čehokoli z výstupu — tokeny do příkazové řádky bez myši |
+| [catppuccin/tmux](https://github.com/catppuccin/tmux), [dracula/tmux](https://github.com/dracula/tmux) | Témata / hotový status bar |
+| [tmux-battery](https://github.com/tmux-plugins/tmux-battery), [tmux-cpu](https://github.com/tmux-plugins/tmux-cpu) | Moduly do status baru |
+| [tmux-sensible](https://github.com/tmux-plugins/tmux-sensible) | Sada „rozumných defaultů“ |
+
+Jediný z nich, který umí něco, co tmux sám vůbec neumí, je **tmux-resurrect** —
+server nepřežije reboot a resurrect je na to standardní odpověď. Pokud si máš
+nainstalovat jediný plugin, je to tenhle.
+
+### Co už je dnes vestavěné
+
+Část ekosystému zastarala, protože tmux funkce mezitím vstřebal:
+
+- **tmux-copycat** (regex hledání) — od tmuxu 3.1 je regex hledání vestavěné
+  v [copy mode](#copy-mode-a-schránka).
+- **tmux-yank** — z velké části ho nahradí `set -g set-clipboard on` (OSC 52)
+  nebo tři řádky s `copy-pipe-and-cancel`, viz
+  [Copy mode a schránka](#copy-mode-a-schránka).
+- **tmux-prefix-highlight** — jeden řádek s `#{?client_prefix,…}`, viz
+  [Status bar ví, že jsi zmáčkl prefix](#status-bar-ví-že-jsi-zmáčkl-prefix).
+- **tmux-sensible** — půlka jeho nastavení se s moderním tmuxem už kryje.
+
+Obvyklá rada: začni bez pluginů a sáhni po TPM, až budeš chtít resurrect nebo
+thumbs.
