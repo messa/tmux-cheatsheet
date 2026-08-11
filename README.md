@@ -91,7 +91,30 @@ make build; tmux wait-for -S build-hotov
 
 Blokuje, dokud nepřijde `-S` se stejným jménem kanálu. Deterministická
 synchronizace mezi panes, okny a skripty — tam, kde by jinak byl `sleep`
-a hádání. `-L`/`-U` navíc umí zámek (lock/unlock).
+a hádání.
+
+Kanál je vázaný na **server**, ne na session nebo okno (proto `wait-for` jako
+jediný příkaz nemá `-t`). Signalizovat i čekat může kdokoli, kdo mluví se
+stejným serverem — pane v jakékoli session i skript úplně mimo tmux. Blokuje
+se přitom jen proces `tmux wait-for`, žádný pane tím nestojí. Jiný server
+(`tmux -L …`) kanál nevidí a restart serveru kanály smaže.
+
+Přesná sémantika (tmux 3.5):
+
+| Situace | Co se stane |
+| --- | --- |
+| `-S` a někdo čeká | Probudí **všechny** čekající naráz |
+| `-S` a nikdo nečeká | Uloží se jeden „budíček“ — příští čekání se vrátí hned a spotřebuje ho |
+| Druhý `-S`, pořád nikdo nečeká | **Uložený budíček zruší** — signály se neskládají do fronty |
+
+Vzor „1× signalizuj, 1× čekej“ je tedy bezpečný v obou pořadích; složitější
+stav jedním kanálem nepřenášej.
+
+`-L`/`-U` navíc umí zámek: `-L` se vrátí hned po získání a zámek drží kanál,
+ne proces — přežije i konec klienta, který ho vzal. Další `-L` se řadí do
+fronty a `-U` předá zámek prvnímu ve frontě — bohužel i mrtvému, takže
+zabitý čekatel (Ctrl-C, `timeout`) nechá kanál zamčený. Na robustní „neběž
+dvakrát“ mezi skripty je proto lepší `flock(1)`.
 
 ### Popup: plovoucí okno nad layoutem
 
