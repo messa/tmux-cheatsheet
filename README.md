@@ -485,9 +485,16 @@ režimu, kdy každý teammate dostane vlastní pane. Ten stojí přímo na tmuxu
 alternativou je jen iTerm2 s `it2` CLI. Ve VS Code, Windows Terminalu ani
 Ghostty nefunguje.
 
+Agent teams jsou experimentální a defaultně vypnuté — nejdřív je musíš zapnout
+přes `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (v prostředí nebo v
+`settings.json`). Bez toho se žádný team nezaloží.
+
 ```json
 // ~/.claude/settings.json
-{ "teammateMode": "auto" }
+{
+  "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+  "teammateMode": "auto"
+}
 ```
 
 `"in-process"` je default (všichni v jednom terminálu), `"auto"` zapne split
