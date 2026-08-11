@@ -822,10 +822,15 @@ Pravidla hry:
   `set-hook` bez indexu přepíše všechno; víc akcí na jednu událost se věší
   přes indexy — `set-hook -g 'session-created[1]' …`.
 - Uvnitř hooku říkají formátové proměnné, koho se událost týká:
-  `#{hook_session}`, `#{hook_window}`, `#{hook_pane}` (ID) a
-  `#{hook_session_name}`, `#{hook_window_name}` (jména).
+  `#{hook_session}`, `#{hook_window}`, `#{hook_pane}` (ID),
+  `#{hook_session_name}`, `#{hook_window_name}` (jména) a u `client-*`
+  hooků `#{hook_client}` — jméno klienta, což je typicky jeho tty
+  (`/dev/pts/3`).
+- Formáty ale expanduje jen příkaz, který to umí sám (`run-shell`,
+  `display-message`, …) — `set` uvnitř hooku uloží `#{…}` doslova;
+  na expanzi při zápisu je `set -F`.
 
-Dva praktické příklady. Watchdog — spadlý proces se sám nastartuje znovu
+Tři praktické příklady. Watchdog — spadlý proces se sám nastartuje znovu
 (`pane-died` vyžaduje `remain-on-exit`, viz [Návratový kód](#návratový-kód);
 a pozor, příkaz padající hned po startu se takhle restartuje pořád dokola):
 
@@ -840,6 +845,13 @@ A desktop notifikace místo hvězdičky ve status baru — dotažení
 ```tmux
 setw monitor-silence 30
 set-hook -g alert-silence 'run-shell "notify-send \"Build doběhl\""'
+```
+
+A evidence připojení, `hook_client` v akci — na sdíleném stroji vidíš,
+které tty se kdy připojilo:
+
+```tmux
+set-hook -g client-attached 'run-shell -b "echo #{hook_client} >> ~/attach.log"'
 ```
 
 ### Na co si dát pozor
