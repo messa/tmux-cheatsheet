@@ -184,6 +184,21 @@ Jméno tabulky `off` není nic magického, je vymyšlené.
 
 ### SSH agent, který přežije reattach
 
+Nejdřív krátce, co je SSH agent, protože na něm celá sekce stojí:
+**ssh-agent** je proces na pozadí, který drží odemčené SSH klíče v paměti.
+Passphrase zadáš jednou (`ssh-add`; často to obstará desktopové prostředí
+samo) a každé další `ssh` nebo `git pull` si podpis vyžádá od agenta, místo
+aby se na passphrase ptalo znovu. Programy agenta najdou přes proměnnou
+`SSH_AUTH_SOCK` — je v ní cesta k unixovému socketu, přes který s agentem
+mluví. `ssh-add -l` ukáže, jestli agent běží a jaké klíče drží.
+
+**Agent forwarding** (`ssh -A server`) socket agenta „protáhne“ na server:
+sshd tam vytvoří dočasný unixový socket napojený na agenta u tebe na
+notebooku, takže
+třeba `git pull` na serveru se podepíše tvým lokálním klíčem, aniž by klíč
+kdy opustil tvůj stroj. Jenže ten dočasný socket žije jen tak dlouho jako SSH
+spojení, které ho vytvořilo — a přesně z toho plyne následující problém.
+
 Scénář: tmux běží na serveru a připojuješ se s agent forwardingem (`ssh -A`).
 Po výpadku a novém přihlášení začne ve **starých** panes selhávat `git pull`
 a všechno ostatní přes agenta (`Permission denied (publickey)`) —
