@@ -12,6 +12,7 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 - [Copy mode a schránka](#copy-mode-a-schránka)
 - [Ostatní užitečné](#ostatní-užitečné)
 - [Konfigurace](#konfigurace)
+- [tmux a Claude Code](#tmux-a-claude-code)
 
 ---
 
@@ -407,3 +408,95 @@ set -g default-terminal "tmux-256color"
 
 Po úpravě načti buď `prefix r` (s bindingem výše), nebo
 `tmux source-file ~/.tmux.conf`.
+
+---
+
+## tmux a Claude Code
+
+Claude Code v tmuxu funguje, ale pár věcí se defaultně rozbije. Následující je
+podle [oficiální dokumentace](https://code.claude.com/docs/en/terminal-config).
+
+### Nutné minimum do `~/.tmux.conf`
+
+```tmux
+set -g allow-passthrough on
+set -s extended-keys on
+set -as terminal-features 'xterm*:extkeys'
+set -g mouse on
+```
+
+Co která řádka řeší:
+
+| Volba | Bez ní |
+| --- | --- |
+| `allow-passthrough on` | tmux spolkne desktop notifikace a progress bar, nedostanou se do vnějšího terminálu |
+| `extended-keys` + `terminal-features` | tmux nerozliší Shift+Enter od Enter, takže Shift+Enter místo nového řádku odešle prompt |
+| `mouse on` | kolečko myši scrolluje tmux místo Claude Code |
+
+Platí i tehdy, když tvůj terminál Shift+Enter sám o sobě umí — tmux je uprostřed
+a musí ho umět propustit.
+
+### `/terminal-setup` pouštěj mimo tmux
+
+Příkaz zapisuje do konfigurace **hostitelského** terminálu (VS Code, Alacritty,
+Zed, …), takže ho spusť přímo v něm, ne uvnitř tmuxu nebo screenu.
+
+Výjimka: detekci iTerm2 zvládá i zevnitř tmuxu.
+
+### Fullscreen rendering
+
+[Fullscreen rendering](https://code.claude.com/docs/en/fullscreen) kreslí do
+alternate screen bufferu (jako `vim`), zapíná se `/tui fullscreen`. V tmuxu
+k tomu patří tři věci:
+
+- **`tmux -CC` (iTerm2 integration mode) nefunguje.** Alternate screen buffer ani
+  mouse tracking tam nejsou v pořádku, double-click může rozhodit terminál.
+  Normální tmux uvnitř iTerm2 (bez `-CC`) je OK.
+- **tmux do řady 3.6 včetně nemá synchronized output**, takže uvidíš víc blikání
+  než mimo tmux. Novější tmux si Claude Code detekuje sám.
+- **Konverzace není v nativním scrollbacku**, takže ji tmux copy mode nevidí.
+  Řešení: `Ctrl-o` (transcript mode) a pak `[` — vysype celou konverzaci do
+  nativního scrollbacku a tam už se dá hledat přes `prefix [` jako cokoli jiného.
+
+### Kolize s copy mode a výběrem myší
+
+Když Claude Code zachytává myš, nativní výběr tažením přestane fungovat — výběr
+žije uvnitř aplikace, ne v tmuxu. Uvnitř tmuxu Claude Code zapisuje výběr i do
+tmux paste bufferu, takže `prefix ]` ho vloží.
+
+Pro jednorázový nativní výběr podrž `Shift` (v iTerm2 `Option`, v Terminal.app
+`Fn`) a táhni myší. Když chceš nativní výběr trvale:
+
+```bash
+CLAUDE_CODE_DISABLE_MOUSE=1 claude          # bez zachytávání myši úplně
+CLAUDE_CODE_DISABLE_MOUSE_CLICKS=1 claude   # kolečko funguje, kliky ne
+```
+
+### Prefix koliduje s Ctrl-b
+
+Claude Code používá `Ctrl-b` pro odeslání tasku na pozadí. V tmuxu je to
+defaultní prefix, takže ho musíš zmáčknout **dvakrát**. Další důvod, proč si
+prefix přemapovat na `Ctrl-a`.
+
+### Agent teams ve split panes
+
+[Agent teams](https://code.claude.com/docs/en/agent-teams) umí běžet ve split-pane
+režimu, kdy každý teammate dostane vlastní pane. Ten stojí přímo na tmuxu —
+alternativou je jen iTerm2 s `it2` CLI. Ve VS Code, Windows Terminalu ani
+Ghostty nefunguje.
+
+```json
+// ~/.claude/settings.json
+{ "teammateMode": "auto" }
+```
+
+`"in-process"` je default (všichni v jednom terminálu), `"auto"` zapne split
+panes, když už v tmuxu jsi, `"tmux"` je vynutí. Jednorázově
+`claude --teammate-mode auto`.
+
+Když po skončení session zůstane viset osiřelá tmux session:
+
+```bash
+tmux ls
+tmux kill-session -t <jmeno>
+```
