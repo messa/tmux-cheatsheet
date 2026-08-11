@@ -894,10 +894,13 @@ Od tmuxu 3.5 copy mode umí dvě věci navíc:
   (`#{search_count_partial}` = 1, dokud tmux ještě dopočítává),
   `#{search_present}`, jestli se vůbec hledá. Hlavně pro skripty —
   `display -p` v copy mode je přečte.
-- **OSC 8 hyperlinky.** Odkazy, které vypisuje `ls --hyperlink`, gcc nebo
-  delta, si tmux ukládá a dává formátům: `#{copy_cursor_hyperlink}` je cíl
-  odkazu pod kurzorem v copy mode, `#{mouse_hyperlink}` pod myší. Otevírání
-  jednou klávesou:
+- **OSC 8 hyperlinky.** Escape sekvence, kterou program k vypsanému textu
+  přibalí neviditelné URL — obdoba `<a href>` z HTML pro terminál: na
+  obrazovce je jméno souboru, kliknutím (typicky Ctrl+klik) se otevře cíl.
+  Vypisuje je třeba `ls --hyperlink` nebo gcc v chybových hláškách; tmux si
+  je ukládá a dává formátům: `#{copy_cursor_hyperlink}` je cíl odkazu pod
+  kurzorem v copy mode, `#{mouse_hyperlink}` pod myší. Otevírání jednou
+  klávesou:
 
   ```tmux
   bind -T copy-mode-vi o run-shell -b 'xdg-open "#{copy_cursor_hyperlink}"'
@@ -1398,11 +1401,12 @@ a připojuje (`screen -r`).
 
 Symbolický moment střídání stráží: v roce 2009 vzalo OpenBSD tmux do base
 systému jako BSD licencovanou alternativu ke screenu — a vedle licence
-rozhodovala i kvalita kódu. Theo de Raadt tehdy [v
-diskusi](https://www.root.cz/zpravicky/openbsd-do-base-importuje-tmux/):
+rozhodovala i kvalita kódu. Theo de Raadt tehdy [v diskusi na
+Undeadly](https://undeadly.org/cgi?action=article&sid=20090707041154):
 „Nejpůsobivější věcí na tmux podle mě bylo, jak otravný byl audit zdrojového
 kódu. Během dvou hodin jsem našel pouze jednu nebo dvě pitomosti, které měly
-z bezpečnostního hlediska pouze velmi zanedbatelnou důležitost.“
+z bezpečnostního hlediska pouze velmi zanedbatelnou důležitost.“ (Překlad ze
+[zprávičky na root.cz](https://www.root.cz/zpravicky/openbsd-do-base-importuje-tmux/).)
 
 Hlavní rozdíly:
 
