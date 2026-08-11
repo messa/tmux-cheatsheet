@@ -29,7 +29,10 @@ Hlavní důvod, proč se tmux učit, je jeden:
 - **Práce přežije spojení.** Pustíš na serveru migraci, build nebo
   `apt upgrade`, spadne ti SSH — a proces běží dál. Vrátíš se přes `tmux a`.
   Idiom hned po přihlášení: `tmux a || tmux` (připoj se, případně založ novou
-  session).
+  session); aby ses ho nemusel učit vypisovat, viz
+  [Automatický start po přihlášení](#automatický-start-po-přihlášení). A když
+  sis na tmux vzpomněl až ve chvíli, kdy proces už běží, není nic ztraceno —
+  viz [reptyr](#reptyr-dodatečné-přehození-procesu).
 
 Zbytek jsou věci, které dostaneš, když už ho máš:
 
@@ -976,6 +979,76 @@ dál `top` a `bottom`); obsah řídí `pane-border-format`, např.
 nastavuje program uvnitř (escape sekvencí — Claude Code to dělá průběžně sám),
 ručně jde přes `:select-pane -T jmeno`. Zabere to jeden řádek z každého panu.
 
+### Automatický start po přihlášení
+
+Multiplexer začneš doopravdy používat až ve chvíli, kdy se spouští sám —
+jinak si člověk radši otevře patnácté okno terminálu, než aby napsal `tmux`.
+Do `~/.bashrc` (u login shellu na serveru `~/.bash_profile`):
+
+```bash
+case $- in *i*)
+  [ -z "$TMUX" ] && command -v tmux >/dev/null && exec tmux new -A -s main
+esac
+```
+
+Tři podmínky, každá tam má důvod:
+
+- **`$-` obsahuje `i`** — jen interaktivní shell. `~/.bashrc` se načítá i při
+  `scp` nebo `rsync` a spuštěný tmux by přenos rozbil.
+- **`$TMUX` je prázdná** — uvnitř tmuxu je ta proměnná nastavená. Bez téhle
+  podmínky by si každý nový pane spustil další tmux uvnitř tmuxu.
+- **`command -v tmux`** — pojistka. S `exec` se shell nahradí tmuxem, takže
+  na stroji bez tmuxu by ses jinak odřízl od přihlášení.
+
+`exec` je volba, ne nutnost: s ním po `prefix d` rovnou končí i SSH spojení,
+bez něj se vrátíš do shellu. Starší varianta téhož je
+`test -z "$TMUX" && (tmux attach || tmux new-session)`; `new -A` obojí
+zvládne jedním příkazem (viz [Drobnosti](#drobnosti)) a `-s main` navíc
+zajistí, že se všechna přihlášení sejdou v jedné session místo hromady
+sessions `0`, `1`, `2`, …
+
+### Zámek obrazovky a úklid osiřelých sessions
+
+tmux umí session po zadané době nečinnosti zamknout — obdoba `Ctrl-a x` ze
+screenu. Typický důvod: na serverech zůstávají v odpojených sessions viset
+přihlášené rootovské shelly.
+
+```tmux
+set -g lock-after-time 1800   # zamkni po 30 minutách nečinnosti (0 = nikdy)
+set -g lock-command "lock -np"  # čím zamykat (tohle je i default)
+bind X lock-session           # ruční zámek — defaultní zkratka na něj není
+```
+
+| Příkaz | Co zamkne |
+| --- | --- |
+| `lock-client` | Jednoho klienta |
+| `lock-session` | Všechny klienty připojené k session |
+| `lock-server` (alias `lock`) | Úplně všechny klienty na serveru |
+
+Odemyká se heslem uživatele, pod kterým tmux běží — zamykání dělá externí
+program z `lock-command`, tmux jen hlídá čas. `lock-after-time` je session
+volba, takže se dá nastavit i jen pro konkrétní session (`set -t root-work`).
+
+Zámek řeší „někdo mi sáhne na terminál“, ne „session tu visí týden“. Na to je
+druhá volba:
+
+```tmux
+set -g destroy-unattached on   # session zanikne s odpojením posledního klienta
+```
+
+Pro [grouped sessions](#víc-klientů-každý-na-jiném-okně-grouped-sessions) má
+navíc hodnoty `keep-last` (zruš jen tehdy, když ve skupině zůstane někdo
+další) a `keep-group` (nezruš poslední session skupiny).
+
+> **Tohle není bezpečnostní drobnost, ale vypnutí půlky tmuxu.** S `on`
+> přestane dávat smysl detach — a padne i všechno, co běží bez klienta:
+> `tmux new -d -s tunel …`, celá
+> [Automatizace a skriptování](#automatizace-a-skriptování). Session
+> založená přes `-d` zanikne okamžitě, protože k ní nikdy žádný klient
+> připojený nebyl; když je poslední, skončí s ní i server. Nastavuj to
+> cíleně na konkrétní session (`set -t root-work destroy-unattached on`),
+> ne globálně.
+
 ---
 
 ## tmux a Claude Code
@@ -1167,6 +1240,7 @@ z jiné vrstvy a co jen nadstavba:
 | [mosh](https://mosh.org/), [Eternal Terminal](https://eternalterminal.dev/) | Odolnější spojení místo SSH | Jiná vrstva, s tmuxem se kombinuje |
 | [tmuxinator](https://github.com/tmuxinator/tmuxinator), [tmuxp](https://github.com/tmux-python/tmuxp) | Session managery | Nadstavba, jen skriptují tmux |
 | WezTerm, kitty, iTerm2 | Terminály s vlastním multiplexingem | Částečné překrytí funkcí |
+| [reptyr](https://github.com/nelhage/reptyr) | Přehodí běžící proces do jiného terminálu | Doplněk; dostane pod tmux to, cos spustil bez něj |
 
 ### GNU screen
 
@@ -1326,3 +1400,42 @@ jako sekce [Automatizace a skriptování](#automatizace-a-skriptování) —
 `new-window`, `send-keys`… tmuxp navíc umí `tmuxp freeze`: z běžící session
 vyrobí YAML. Než po nich sáhneš, zvaž, jestli nestačí
 `tmux new -A -s projekt -c ~/projekt` v aliasu nebo krátký shell skript.
+
+### reptyr: dodatečné přehození procesu
+
+Situace, kterou zná každý: na serveru běží hodinový build a teprve teď ti
+dojde, že jsi ho nepustil v tmuxu. [reptyr](https://github.com/nelhage/reptyr)
+je záchranná brzda — připojí se k běžícímu procesu přes `ptrace`, vymění mu
+standardní vstup a výstup a hlavně **řídící terminál**, takže proces doběhne
+tam, kam ho přestěhuješ:
+
+```bash
+# v původním terminálu
+Ctrl-Z               # uspat na pozadí
+bg                   # nechat běžet dál
+disown               # odpojit od shellu, ať ho jeho ukončení nezabije
+pgrep -a make        # zjistit PID
+
+# v tmuxu
+reptyr 123456
+```
+
+`bg` a `disown` jsou volitelné, ale bez nich zůstane úloha na starém
+terminálu viset jako upozaděná a dá se odtamtud vytáhnout přes `fg`.
+
+Nefunguje to vždycky:
+
+- **`ptrace` bývá omezený.** Na distribucích s YAMA (Ubuntu a spol.) brání
+  připojení k cizímu procesu `kernel.yama.ptrace_scope`; buď `sudo`, nebo
+  dočasné povolení přes ten sysctl.
+- **Procesy s potomky** (shellový skript, pipeline) se přehazují celé přes
+  `reptyr -T`, které převezme rovnou celou terminálovou session. Na FreeBSD
+  `-T` není.
+- Přehodit jde jen to, co má vlastní PID — jednu rouru uprostřed pipeline
+  ne.
+
+Česky o něm psal [Petr Krčmář na blogu
+root.cz](https://blog.root.cz/petrkrcmar/prehozeni-beziciho-procesu-pod-tmuxscreen/);
+ze stejné niky je i starší [retty](http://pasky.or.cz/dev/retty/) od Petra
+Baudiše. Předejít celé situaci se dá
+[automatickým startem tmuxu po přihlášení](#automatický-start-po-přihlášení).
