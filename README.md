@@ -888,6 +888,26 @@ V copy mode s vi klávesami (`setw -g mode-keys vi`):
 | `g` / `G` | Začátek / konec historie |
 | `H` / `M` / `L` | Horní / prostřední / dolní řádek obrazovky |
 
+Od tmuxu 3.5 copy mode umí dvě věci navíc:
+
+- **Stav hledání je ve formátech.** `#{search_count}` říká počet shod
+  (`#{search_count_partial}` = 1, dokud tmux ještě dopočítává),
+  `#{search_present}`, jestli se vůbec hledá. Hlavně pro skripty —
+  `display -p` v copy mode je přečte.
+- **OSC 8 hyperlinky.** Odkazy, které vypisuje `ls --hyperlink`, gcc nebo
+  delta, si tmux ukládá a dává formátům: `#{copy_cursor_hyperlink}` je cíl
+  odkazu pod kurzorem v copy mode, `#{mouse_hyperlink}` pod myší. Otevírání
+  jednou klávesou:
+
+  ```tmux
+  bind -T copy-mode-vi o run-shell -b 'xdg-open "#{copy_cursor_hyperlink}"'
+  ```
+
+  Interně to funguje vždy; aby odkazy byly klikací i ve vnějším terminálu,
+  musí mít featuru `hyperlinks` — tmux ji u známých terminálů pozná sám,
+  vynutí se přes `set -ga terminal-features ",*:hyperlinks"` (k zápisu viz
+  [Konfigurace](#konfigurace)).
+
 Kopírování do systémové schránky — tmux má vlastní buffery oddělené od schránky
 systému, takže výběr je potřeba prohnat externím nástrojem:
 
@@ -1375,6 +1395,14 @@ Předchůdce z roku 1987 (tmux je z 2007) a důvod, proč si půlka světa
 přemapovává prefix na `Ctrl-a` — to je defaultní prefix screenu. Základní trik
 je stejný: proces na pozadí drží terminál, klient se odpojuje (`Ctrl-a d`)
 a připojuje (`screen -r`).
+
+Symbolický moment střídání stráží: v roce 2009 vzalo OpenBSD tmux do base
+systému jako BSD licencovanou alternativu ke screenu — a vedle licence
+rozhodovala i kvalita kódu. Theo de Raadt tehdy [v
+diskusi](https://www.root.cz/zpravicky/openbsd-do-base-importuje-tmux/):
+„Nejpůsobivější věcí na tmux podle mě bylo, jak otravný byl audit zdrojového
+kódu. Během dvou hodin jsem našel pouze jednu nebo dvě pitomosti, které měly
+z bezpečnostního hlediska pouze velmi zanedbatelnou důležitost.“
 
 Hlavní rozdíly:
 
