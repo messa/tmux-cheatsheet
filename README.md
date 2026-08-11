@@ -4,6 +4,8 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 
 ## Obsah
 
+- [Na co je to dobré](#na-co-je-to-dobré)
+- [Méně známé triky](#méně-známé-triky)
 - [Slovníček pojmů](#slovníček-pojmů)
 - [Jak se čtou zkratky](#jak-se-čtou-zkratky)
 - [Sessions](#sessions)
@@ -14,6 +16,180 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 - [Ostatní užitečné](#ostatní-užitečné)
 - [Konfigurace](#konfigurace)
 - [tmux a Claude Code](#tmux-a-claude-code)
+
+---
+
+## Na co je to dobré
+
+Hlavní důvod, proč se tmux učit, je jeden:
+
+- **Práce přežije spojení.** Pustíš na serveru migraci, build nebo
+  `apt upgrade`, spadne ti SSH — a proces běží dál. Vrátíš se přes `tmux a`.
+  Idiom hned po přihlášení: `tmux a || tmux` (připoj se, případně založ novou
+  session).
+
+Zbytek jsou věci, které dostaneš, když už ho máš:
+
+- **Session na projekt.** Místo tabů terminálu, které zmizí s jeho zavřením,
+  `tmux a -t projekt` — okna s nastavenými adresáři a rozdělanou prací přežijí
+  restart terminálu, odhlášení i pád okenního správce.
+- **Panes na sledování.** Editor v jednom panu, testy ve druhém, `tail -f`
+  logu ve třetím — všechno viditelné naráz.
+- **Dlouho běžící proces bez systemd.** `tmux new -d -s tunel 'ssh -L …'` —
+  nejrychlejší cesta k „běž na pozadí a můžu se na to kdykoli podívat“.
+- **Skriptování zvenčí.** `tmux send-keys -t prace 'make test' Enter` — jeden
+  skript nastartuje celé prostředí nebo pošle vstup běžící aplikaci. Na tomhle
+  stojí tmuxinator i [agent teams Claude Code](#agent-teams-ve-split-panes).
+- **Sdílení session.** Dva lidé na jednom stroji, oba vidí totéž — párové
+  programování bez screensharingu. Viz také
+  [sledování bez možnosti zásahu](#sledování-bez-možnosti-zásahu).
+- **Scrollback a hledání.** `prefix [` a hledáš v tisících řádků výstupu,
+  nezávisle na schopnostech terminálu — funguje i v holém tty.
+- **Splity a taby tam, kde terminál žádné neumí.** Linuxová konzole, serial
+  console, cizí stroj s hloupým terminálem.
+
+Vedlejší efekt: čím víc věcí žije v tmuxu, tím míň záleží na tom, jaký
+terminálový emulátor zrovna používáš — zkratky, splity i sessions si neseš
+s sebou.
+
+---
+
+## Méně známé triky
+
+Všechno níže je v holém tmuxu bez pluginů (popupy a `-e` potřebují
+tmux ≥ 3.2). Pojmy vysvětluje [Slovníček](#slovníček-pojmů).
+
+### Pane jako objekt: číst, logovat, restartovat
+
+Na pane se dá zvenčí nejen psát (`send-keys`, viz
+[Ostatní užitečné](#ostatní-užitečné)), ale i číst z něj a řídit ho:
+
+```bash
+tmux capture-pane -p -t prace:0.1        # vypíše, co je v panu vidět
+tmux capture-pane -p -S - -t prace:0.1   # totéž včetně celého scrollbacku
+
+tmux pipe-pane -o -t prace:0.1 'cat >>~/pane.log'   # od teď logovat do souboru
+tmux pipe-pane -t prace:0.1                          # vypnout logování
+
+tmux respawn-pane -k -t prace:0.1 'npm run dev'      # restart příkazu v panu
+```
+
+`capture-pane` znamená, že můžeš grepovat výstup procesu, který si nikam
+neloguje — a je to i způsob, jak do terminálu „vidí“ AI agenti. `pipe-pane`
+zachrání situaci, kdy si v půlce hodinového buildu vzpomeneš, že výstup chceš
+uložit. `respawn-pane -k` vymění zamrzlý proces bez rozbití layoutu.
+
+### `wait-for`: semafor zadarmo
+
+```bash
+# skript nebo pane A: čekej na signál
+tmux wait-for build-hotov
+
+# pane B: až doběhne build, signalizuj
+make build; tmux wait-for -S build-hotov
+```
+
+Blokuje, dokud nepřijde `-S` se stejným jménem kanálu. Deterministická
+synchronizace mezi panes, okny a skripty — tam, kde by jinak byl `sleep`
+a hádání. `-L`/`-U` navíc umí zámek (lock/unlock).
+
+### Popup: plovoucí okno nad layoutem
+
+```tmux
+bind g display-popup -E -w 80% -h 80% -d "#{pane_current_path}" 'lazygit'
+bind N display-popup -E 'vim ~/poznamky.md'
+```
+
+`display-popup` otevře program v okně plovoucím nad panes — layout nechá být,
+`-E` popup zavře, jakmile program skončí. Ideální na git UI, poznámky nebo
+rychlou kalkulačku. Příbuzný `display-menu` staví vlastní kontextová menu.
+
+### Psát do všech panes naráz
+
+```tmux
+setw synchronize-panes on    # a potom zase off
+```
+
+Co napíšeš, jde do všech panes v okně současně. Čtyři panes, v každém SSH na
+jiný server — jednorázový zásah na čtyřech strojích bez Ansiblu. Hodí se jako
+toggle: `bind S setw synchronize-panes` (bool volba bez hodnoty se přepne).
+
+### Upozornění, že příkaz doběhl
+
+```tmux
+setw monitor-silence 30      # ohlaš, když je okno 30 s zticha
+setw monitor-activity on     # ohlaš jakýkoli výstup v okně na pozadí
+```
+
+Okno se ve status baru označí `~` (ticho) resp. `#` (aktivita). Na „řekni mi,
+až build skončí“ je `monitor-silence` chytřejší — zajímá tě, kdy výstup
+*přestal*, ne že nějaký je. `set -g visual-silence on` k tomu ukáže i zprávu.
+
+### Víc serverů vedle sebe
+
+```bash
+tmux -L agenti new -d -s x    # oddělený server s vlastním socketem
+tmux -L agenti ls             # …vlastní sessions, vlastní konfigurace
+```
+
+Server je vázaný na socket; `-L jmeno` založí další socket (a tedy server)
+vedle defaultního. Izolovaný svět — `kill-server` v něm nesáhne na tvoje
+běžné sessions. Hodí se na experimenty nebo pro automatizaci, která si nemá
+špinit tvůj pracovní server.
+
+`-S /cesta/k/socketu` určí socket plnou cestou — tudy vede i sdílení tmuxu
+mezi dvěma OS uživateli (socket na společně přístupném místě + práva, typicky
+přes společnou skupinu).
+
+### Sledování bez možnosti zásahu
+
+```bash
+tmux attach -r -t prezentace           # read-only klient
+tmux attach -f active-pane -t work     # klient s vlastním aktivním panem
+```
+
+Read-only klient všechno vidí, ale nic nenapíše (funguje mu jen detach) —
+dobré na prezentace a „koukej mi přes rameno“. `-r` je zkratka za
+`-f read-only,ignore-size`, takže zároveň nezmenší okno ostatním.
+
+`active-pane` dá klientovi vlastní kurzor: dva lidé v jednom okně, každý
+v jiném panu. Doplněk ke
+[grouped sessions](#víc-klientů-každý-na-jiném-okně-grouped-sessions), které
+řeší totéž o úroveň výš — vlastní aktivní *okno*.
+
+### Vnořený tmux: vypnout ten vnější jednou klávesou
+
+Lokální tmux + tmux na serveru = prefix se pere a všechno mačkáš dvakrát.
+Nabinduj si vypínač celého vnějšího tmuxu:
+
+```tmux
+bind -T root F12 set prefix None \; set key-table off \; display "tmux OFF"
+bind -T off  F12 set -u prefix \; set -u key-table \; display "tmux ON"
+```
+
+`F12` přepne vnější tmux do prázdné key table `off` — od té chvíle jde každá
+klávesa včetně prefixu dovnitř, do vnořeného tmuxu. Druhé `F12` ho probudí.
+Jméno tabulky `off` není nic magického, je vymyšlené.
+
+### Status bar ví, že jsi zmáčkl prefix
+
+```tmux
+set -g status-right "#{?client_prefix,#[reverse] PREFIX #[default],}%H:%M"
+```
+
+`#{?client_prefix,…,…}` je podmínka (viz [Vlastní formát](#vlastní-formát--f))
+— proměnná je 1, dokud tmux čeká na druhou klávesu zkratky. Nečekaně užitečné
+při učení zkratek: vidíš, že prefix „drží“.
+
+### Drobnosti
+
+- `tmux new -s x -e FOO=bar` — env proměnná jen pro tuhle session (dostanou ji
+  nové panes). Dobré na `AWS_PROFILE` a podobné bez špinění globálního
+  prostředí.
+- `tmux new -A -s x` — připoj se, a když session neexistuje, založ ji. Skvělé
+  interaktivně, ale ve skriptu bez terminálu spadne na `open terminal failed`
+  (z `new` se stane attach). Tam patří
+  `tmux has-session -t x 2>/dev/null || tmux new -d -s x`.
 
 ---
 
@@ -50,6 +226,12 @@ se také mohou připojit ke stejné session naráz — viz
 Proces, který běží na pozadí a drží všechny sessions, windows a panes. Startuje se
 automaticky při prvním `tmux` a běží dál, i když zavřeš terminál. Proto ti věci
 v tmuxu přežijí zavření okna terminálu nebo odpojení SSH.
+
+Server je **per OS uživatel** — každý účet má svůj, komunikuje se s ním přes
+socket v `/tmp/tmux-<UID>/` (adresář má práva `700`; jinam ho přesune
+`$TMUX_TMPDIR`). Sessions jiných uživatelů proto nevidíš a `sudo tmux` mluví
+s úplně jiným serverem. Přesněji je server vázaný na *socket* — jeden uživatel
+jich může mít víc, viz [Víc serverů vedle sebe](#víc-serverů-vedle-sebe).
 
 Když skončí poslední session, server se ukončí.
 
