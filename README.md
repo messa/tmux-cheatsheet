@@ -119,7 +119,7 @@ příkaz `new-window`.
 
 ## Sessions
 
-Session je ejvyšší úroveň skupiny — jedna "pracovní plocha". Obsahuje jedno nebo víc oken
+Session je nejvyšší úroveň skupiny — jedna "pracovní plocha". Obsahuje jedno nebo víc oken
 (windows).
 
 ### Ze shellu
