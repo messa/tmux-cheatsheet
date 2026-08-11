@@ -46,10 +46,10 @@ Zbytek jsou věci, které dostaneš, když už ho máš:
 - **Skriptování zvenčí.** `tmux send-keys -t prace 'make test' Enter` — jeden
   skript nastartuje celé prostředí nebo pošle vstup běžící aplikaci. Na tomhle
   stojí tmuxinator i [agent teams Claude Code](#agent-teams-ve-split-panes).
-- **Testování věcí, které chtějí opravdový terminál.** V CI žádné tty není —
-  tmux ho dodá: headless server, pevně daná velikost okna a `capture-pane`,
-  kterým si přečteš, co je na obrazovce. Takhle se testují TUI aplikace,
-  prompty a shellové integrace. Viz
+- **Testování věcí, které chtějí opravdový terminál.** V CI žádné tty
+  (zařízení terminálu) není — tmux ho dodá: headless server, pevně daná
+  velikost okna a `capture-pane`, kterým si přečteš, co je na obrazovce.
+  Takhle se testují TUI aplikace, prompty a shellové integrace. Viz
   [Automatizace a skriptování](#automatizace-a-skriptování).
 - **Sdílení session.** Dva lidé na jednom stroji, oba vidí totéž — párové
   programování bez screensharingu. Viz také
@@ -236,11 +236,14 @@ set -g update-environment "DISPLAY KRB5CCNAME SSH_ASKPASS SSH_AGENT_PID SSH_CONN
 `setenv` = `set-environment`; `-g` znamená globální prostředí serveru, ze
 kterého dědí každý nový pane. Dvě zrádnosti `~/.ssh/rc`: nesmí nic psát na
 stdout (jinak rozbije přihlášení) a jakmile existuje, sshd přestane sám volat
-`xauth` — při X11 forwardingu ho musí zavolat ten skript.
+`xauth` (autentizace X11 forwardingu, viz níže) — musí ho zavolat ten skript.
 
-Tentýž problém má i `DISPLAY` (X11 forwarding) a `SSH_CONNECTION` — proto
-jsou v `update-environment` taky. Symlink řeší jen `SSH_AUTH_SOCK`, u zbytku
-zbývá `eval "$(tmux show-env -s DISPLAY)"`.
+Tentýž problém má i `DISPLAY` a `SSH_CONNECTION` — proto jsou
+v `update-environment` taky. **X11 forwarding** (`ssh -X`) je obdoba agent
+forwardingu pro grafiku: aplikace běží na serveru, její okno se kreslí na
+tvém stroji. Kam kreslit, říká programům právě proměnná `DISPLAY`,
+a oprávnění se prokazuje přes `xauth`. Symlink řeší jen `SSH_AUTH_SOCK`,
+u zbytku zbývá `eval "$(tmux show-env -s DISPLAY)"`.
 
 ### Status bar ví, že jsi zmáčkl prefix
 
@@ -305,6 +308,16 @@ s úplně jiným serverem. Přesněji je server vázaný na *socket* — jeden u
 jich může mít víc, viz [Víc serverů vedle sebe](#víc-serverů-vedle-sebe).
 
 Když skončí poslední session, server se ukončí.
+
+### socket
+
+Unixový socket — speciální soubor, přes který si dva procesy na jednom
+stroji posílají data (v `ls -l` má typ `s`; nemá IP ani port, jen cestu
+v souborovém systému). Každé `tmux …` v shellu je ve skutečnosti klient,
+který přes socket předá příkaz serveru — proto se jiný server vybírá volbou
+`-L jmeno` (jiné jméno socketu) nebo `-S /cesta/k/socketu`. Přes unixový
+socket komunikuje i SSH agent, viz
+[trik s reattachem](#ssh-agent-který-přežije-reattach).
 
 ### client
 
@@ -637,6 +650,13 @@ tmux se dá použít jako headless terminál: skript v něm nastartuje prostřed
 pošle mu vstup a přečte, co se objevilo na obrazovce. Tudy se testují TUI
 aplikace, tudy si sahají do terminálu AI agenti a na tomhle stojí i
 tmuxinator.
+
+Proč je to vůbec potřeba: interaktivní programy chtějí **tty** — zařízení
+terminálu, ze kterého čtou klávesy a u kterého zjišťují velikost obrazovky;
+podle jeho přítomnosti poznají, že s nimi mluví člověk. Skript v CI žádné
+tty nemá, takže se programy chovají jinak (vypnou barvy a progress bary),
+nebo rovnou odmítnou běžet. tmux tu mezeru zaplní: každý pane je
+plnohodnotné tty, i když se na něj žádný člověk nedívá.
 
 Sekce je psaná tak, aby se dala číst samostatně — pár příkazů se proto opakuje
 z [Méně známé triky](#méně-známé-triky), kde jsou vysvětlené i z pohledu běžné
@@ -1512,7 +1532,8 @@ vyrobí YAML. Než po nich sáhneš, zvaž, jestli nestačí
 
 Situace, kterou zná každý: na serveru běží hodinový build a teprve teď ti
 dojde, že jsi ho nepustil v tmuxu. [reptyr](https://github.com/nelhage/reptyr)
-je záchranná brzda — připojí se k běžícímu procesu přes `ptrace`, vymění mu
+je záchranná brzda — připojí se k běžícímu procesu přes `ptrace` (stejný
+mechanismus, jakým se k cizímu procesu připojuje debugger), vymění mu
 standardní vstup a výstup a hlavně **řídící terminál**, takže proces doběhne
 tam, kam ho přestěhuješ:
 
@@ -1532,9 +1553,11 @@ terminálu viset jako upozaděná a dá se odtamtud vytáhnout přes `fg`.
 
 Nefunguje to vždycky:
 
-- **`ptrace` bývá omezený.** Na distribucích s YAMA (Ubuntu a spol.) brání
-  připojení k cizímu procesu `kernel.yama.ptrace_scope`; buď `sudo`, nebo
-  dočasné povolení přes ten sysctl.
+- **`ptrace` bývá omezený.** Připojit se k cizímu procesu je citlivá
+  operace, takže ji řada distribucí (Ubuntu a spol.) omezuje bezpečnostním
+  modulem YAMA — reptyr pak spadne na „Operation not permitted“. Pomůže
+  `sudo reptyr`, nebo dočasné povolení
+  `sudo sysctl kernel.yama.ptrace_scope=0` (a potom vrátit na `1`).
 - **Procesy s potomky** (shellový skript, pipeline) se přehazují celé přes
   `reptyr -T`, které převezme rovnou celou terminálovou session. Na FreeBSD
   `-T` není.
