@@ -9,6 +9,7 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 - [Sessions](#sessions)
 - [Windows](#windows)
 - [Panes](#panes)
+- [Výpisy](#výpisy)
 - [Copy mode a schránka](#copy-mode-a-schránka)
 - [Ostatní užitečné](#ostatní-užitečné)
 - [Konfigurace](#konfigurace)
@@ -317,6 +318,62 @@ označíš ho `prefix m`, přepneš se kam chceš a dáš `:join-pane`.
 :resize-pane -Z              # zoom (totéž co prefix z)
 :select-layout tiled
 ```
+
+---
+
+## Výpisy
+
+| Zkráceně | Plný název | Co vypíše |
+| --- | --- | --- |
+| `tmux ls` | `tmux list-sessions` | Sessions |
+| `tmux lsw` | `tmux list-windows` | Okna aktuální session |
+| `tmux lsw -a` | `tmux list-windows -a` | Okna **všech** sessions |
+| `tmux lsp` | `tmux list-panes` | Panes aktuálního okna |
+| `tmux lsp -s` | `tmux list-panes -s` | Panes celé session |
+| `tmux lsp -a` | `tmux list-panes -a` | Panes **všech** sessions |
+
+Díky `-a` není potřeba cyklit přes sessions — jeden příkaz vypíše celý server.
+
+### Vlastní formát (`-F`)
+
+Přehled všech panes s cestou, ve které stojí jejich shell:
+
+```bash
+tmux lsp -a -F '#{p22:#{session_name}:#{window_index}.#{pane_index}} #{p28:window_name} #{s|#{HOME}|~|:pane_current_path}'
+```
+
+```text
+web:1.1                nvim                         ~/projekt
+web:2.1                bash                         ~/projekt/docs
+api:1.1                pytest                       ~/code/api
+api:1.2                Deploy staging               ~/code/api/infra
+```
+
+Tenhle příkaz je v repu jako [`tmux_list_panes.sh`](tmux_list_panes.sh).
+
+Co dělají jednotlivé kousky formátu:
+
+| Zápis | Význam |
+| --- | --- |
+| `#{p22:…}` | Zarovná na 22 znaků (doplní mezery zprava) — dělá sloupce |
+| `#{s\|vzor\|náhrada\|:…}` | Nahradí regexem — tady `$HOME` za `~` |
+| `#{pane_current_path}` | Pracovní adresář panu |
+| `#{window_name}` | Jméno okna (v Claude Code sedí na rozdělanou práci) |
+
+Formátovací proměnné se dají vnořovat (`#{p22:#{session_name}:…}`), celý seznam
+dá `tmux display-message -a`.
+
+### Filtrování (`-f`)
+
+Ve kterých oknech mám otevřený konkrétní projekt:
+
+```bash
+tmux lsp -a -f '#{m:*muj-projekt,#{pane_current_path}}' \
+  -F '#{session_name}:#{window_index} #{window_name}'
+```
+
+`#{m:vzor,hodnota}` porovnává stylem fnmatch (`*`, `?`), `#{m/r:vzor,hodnota}`
+regexem. Stejný filtr bere i `lsw` a `ls`.
 
 ---
 
