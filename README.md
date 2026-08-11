@@ -182,6 +182,51 @@ bind -T off  F12 set -u prefix \; set -u key-table \; display "tmux ON"
 klávesa včetně prefixu dovnitř, do vnořeného tmuxu. Druhé `F12` ho probudí.
 Jméno tabulky `off` není nic magického, je vymyšlené.
 
+### SSH agent, který přežije reattach
+
+Scénář: tmux běží na serveru a připojuješ se s agent forwardingem (`ssh -A`).
+Po výpadku a novém přihlášení začne ve **starých** panes selhávat `git pull`
+a všechno ostatní přes agenta (`Permission denied (publickey)`) —
+`SSH_AUTH_SOCK` v nich ukazuje na socket zaniklého spojení.
+
+tmux s tím napůl počítá: volba `update-environment` (jejíž součástí
+`SSH_AUTH_SOCK` defaultně je) při attachi překopíruje hodnotu z nového
+klienta do prostředí session. Jenže prostředí běžícího shellu zvenčí změnit
+nejde — nové panes tedy fungují, staré ne. Ruční záchrana v postiženém panu:
+
+```bash
+eval "$(tmux show-env -s SSH_AUTH_SOCK)"
+```
+
+(`show-env -s` vypíše hodnotu ze session jako shellový `export`, proto
+`eval`; hodí se z toho udělat alias.)
+
+Trvalé řešení: nedávat shellům cestu, která se mění, ale stabilní symlink,
+který každé přihlášení přehodí na živý socket:
+
+```bash
+# ~/.ssh/rc — sshd ho spustí při každém přihlášení
+if [ -S "$SSH_AUTH_SOCK" ]; then
+  ln -sf "$SSH_AUTH_SOCK" ~/.ssh/agent.sock
+fi
+```
+
+```tmux
+# ~/.tmux.conf na serveru
+setenv -g SSH_AUTH_SOCK "$HOME/.ssh/agent.sock"
+# a SSH_AUTH_SOCK vyndat z update-environment, ať ho attach nepřepíše zpátky:
+set -g update-environment "DISPLAY KRB5CCNAME SSH_ASKPASS SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY"
+```
+
+`setenv` = `set-environment`; `-g` znamená globální prostředí serveru, ze
+kterého dědí každý nový pane. Dvě zrádnosti `~/.ssh/rc`: nesmí nic psát na
+stdout (jinak rozbije přihlášení) a jakmile existuje, sshd přestane sám volat
+`xauth` — při X11 forwardingu ho musí zavolat ten skript.
+
+Tentýž problém má i `DISPLAY` (X11 forwarding) a `SSH_CONNECTION` — proto
+jsou v `update-environment` taky. Symlink řeší jen `SSH_AUTH_SOCK`, u zbytku
+zbývá `eval "$(tmux show-env -s DISPLAY)"`.
+
 ### Status bar ví, že jsi zmáčkl prefix
 
 ```tmux
@@ -715,6 +760,53 @@ spadne na `open terminal failed`:
 tmux -L ci has-session -t app 2>/dev/null || tmux -L ci new-session -d -s app
 ```
 
+### Hooks: tmux reaguje sám
+
+Zatím šlo všechno jedním směrem — skript řídí tmux. Hooks to obracejí: tmux
+sám spustí příkaz, když nastane událost.
+
+```tmux
+set-hook -g client-attached 'display "vítej zpátky"'
+set-hook -g after-split-window 'select-layout tiled'   # po splitu vždy srovnat layout
+```
+
+Jména hooků jsou dvojího druhu: **události** (`session-created`,
+`client-attached`, `client-detached`, `pane-died`, `pane-exited`,
+`pane-focus-in`, `alert-activity`, `alert-silence`, `window-renamed`, …;
+úplný seznam v `man tmux`, sekce HOOKS) a **`after-<příkaz>`**, které se
+spustí po doběhnutí skoro kteréhokoli tmux příkazu (`after-new-window`,
+`after-split-window`, `after-resize-pane`, …).
+
+Pravidla hry:
+
+- Hook spouští **tmux příkaz**, ne shell — na shell je `run-shell`. Ten ale
+  bez `-b` pozdrží frontu tmux příkazů, dokud shell příkaz neskončí; cokoli
+  pomalejšího pouštěj jako `run-shell -b` (na pozadí).
+- Hooks jsou obyčejné options, akorát pole: `show-hooks -g` je vypíše,
+  `set-hook -gu jmeno` hook zruší, bez `-g` platí jen pro aktuální session.
+  `set-hook` bez indexu přepíše všechno; víc akcí na jednu událost se věší
+  přes indexy — `set-hook -g 'session-created[1]' …`.
+- Uvnitř hooku říkají formátové proměnné, koho se událost týká:
+  `#{hook_session}`, `#{hook_window}`, `#{hook_pane}` (ID) a
+  `#{hook_session_name}`, `#{hook_window_name}` (jména).
+
+Dva praktické příklady. Watchdog — spadlý proces se sám nastartuje znovu
+(`pane-died` vyžaduje `remain-on-exit`, viz [Návratový kód](#návratový-kód);
+a pozor, příkaz padající hned po startu se takhle restartuje pořád dokola):
+
+```tmux
+set -g remain-on-exit on
+set-hook -g pane-died 'respawn-pane -k'
+```
+
+A desktop notifikace místo hvězdičky ve status baru — dotažení
+[monitor-silence](#upozornění-že-příkaz-doběhl):
+
+```tmux
+setw monitor-silence 30
+set-hook -g alert-silence 'run-shell "notify-send \"Build doběhl\""'
+```
+
 ### Na co si dát pozor
 
 - **Capture je obraz obrazovky, ne stream.** Progress bary, přepisy přes `\r`
@@ -1154,8 +1246,8 @@ tmux kill-session -t <jmeno>
 
 tmux **žádné plugin API nemá**. „Plugin“ je obyčejný git repozitář se shell
 skripty, které za tebe volají tytéž příkazy, jaké píšeš do `~/.tmux.conf`:
-`bind-key`, `set-option`, `set-hook`. Stojí to na třech vestavěných
-mechanismech:
+`bind-key`, `set-option`, [`set-hook`](#hooks-tmux-reaguje-sám). Stojí to na
+třech vestavěných mechanismech:
 
 1. **`run-shell`** — tmux příkaz, který spustí externí skript. Plugin má
    v kořeni spustitelný soubor `*.tmux` a ten při načtení konfigurace
