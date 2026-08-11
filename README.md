@@ -40,6 +40,13 @@ Typicky se dělá jedna session na projekt. Session žije na serveru nezávisle 
 tvém terminálu — od toho je celý tmux: **detach** (odpojíš se, session běží dál)
 a **attach** (znovu se připojíš).
 
+### session group
+
+Několik sessions sdílejících stejnou sadu oken, ale každá s vlastním aktivním
+oknem. Vzniká přes `new-session -t`. Používá se, když chceš mít v každém
+terminálu otevřené jiné okno téhož projektu — viz
+[Víc klientů, každý na jiném okně](#víc-klientů-každý-na-jiném-okně-grouped-sessions).
+
 ### window
 
 Okno uvnitř session — obdoba záložky (tabu) v terminálu. V daný okamžik vidíš
@@ -151,6 +158,44 @@ Session je nejvyšší úroveň skupiny — jedna "pracovní plocha". Obsahuje j
 | `prefix D` | Seznam připojených klientů (dají se odpojit) |
 | `:new-session -s jmeno` | Nová session bez opuštění tmuxu |
 | `:kill-session` | Zabije aktuální session |
+
+### Víc klientů, každý na jiném okně (grouped sessions)
+
+Když se dva klienti připojí ke **stejné** session, jsou zrcadlem — sdílí current
+window, takže přepnutí okna v jednom přepne i druhého. To se občas hodí (párové
+programování), ale často ne.
+
+Řešení je **grouped session** — `new-session -t`:
+
+```bash
+tmux new-session -t work -s work-2   # work-2 sdílí okna s work, ale má vlastní current window
+
+# terminál 1
+tmux attach -t work
+# terminál 2
+tmux attach -t work-2
+```
+
+Sessions ve skupině sdílí seznam oken, ale každá má vlastní aktivní okno. V
+`tmux ls` jsou označené `(group 0)`.
+
+- Nové okno vytvořené v kterékoli session skupiny se objeví ve všech.
+- Zavření okna ho zavře pro celou skupinu.
+- Zabití jedné session ze skupiny okna nezruší — žijí dál v ostatních.
+
+Pokud nechceš sdílet celou sadu oken, ale jen některá, naskládej je do
+samostatné session ručně přes `:link-window -t jina-session`.
+
+> **Past na velikost okna.** tmux defaultně zmenší okno na velikost nejmenšího
+> připojeného klienta — na dvou různě velkých terminálech pak dostaneš kolem
+> okna rámeček z teček. Řešení:
+>
+> ```tmux
+> setw -g aggressive-resize on   # řídí se nejmenším klientem, který okno OPRAVDU zobrazuje
+> set -g window-size largest     # hrubší varianta: vždy podle největšího klienta
+> ```
+>
+> Pro grouped sessions je správná volba `aggressive-resize`.
 
 ---
 
