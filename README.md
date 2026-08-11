@@ -12,6 +12,7 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 - [Windows](#windows)
 - [Panes](#panes)
 - [Výpisy](#výpisy)
+- [Automatizace a skriptování](#automatizace-a-skriptování)
 - [Copy mode a schránka](#copy-mode-a-schránka)
 - [Ostatní užitečné](#ostatní-užitečné)
 - [Konfigurace](#konfigurace)
@@ -558,6 +559,165 @@ tmux lsp -a -f '#{m:*muj-projekt,#{pane_current_path}}' \
 
 `#{m:vzor,hodnota}` porovnává stylem fnmatch (`*`, `?`), `#{m/r:vzor,hodnota}`
 regexem. Stejný filtr bere i `lsw` a `ls`.
+
+---
+
+## Automatizace a skriptování
+
+tmux se dá použít jako headless terminál: skript v něm nastartuje prostředí,
+pošle mu vstup a přečte, co se objevilo na obrazovce. Tudy se testují TUI
+aplikace, tudy si sahají do terminálu AI agenti a na tomhle stojí i
+tmuxinator.
+
+Sekce je psaná tak, aby se dala číst samostatně — pár příkazů se proto opakuje
+z [Méně známé triky](#méně-známé-triky), kde jsou vysvětlené i z pohledu běžné
+interaktivní práce.
+
+### Vlastní server a deterministická velikost
+
+```bash
+tmux -L ci new-session -d -s app -x 200 -y 50 -c ~/projekt
+# …práce…
+tmux -L ci kill-server
+```
+
+`-L jmeno` znamená vlastní socket, a tedy vlastní server: vlastní sessions,
+vlastní konfigurace a `kill-server`, který nesáhne na tvůj denní tmux. Pro
+skripty je to skoro vždycky správná volba.
+
+Kromě izolace to řeší velikost okna. Na sdíleném serveru platí
+`window-size latest`, takže okno dostane velikost naposledy použitého klienta
+a `-x`/`-y` se zahodí. Na vlastním serveru žádný klient není, takže platí, co
+zadáš — a bez `-x`/`-y` je to 80×24. Pro skript, který výstup grepuje, je tohle
+zásadní: šířka panu určuje, kde se řádky zalomí.
+
+### Poslat vstup
+
+```bash
+tmux -L ci send-keys -t app 'make test' Enter   # text a Enter jsou dva argumenty
+tmux -L ci send-keys -t app C-c                 # Ctrl-C běžícímu programu
+tmux -L ci send-keys -t app -l 'Enter'          # -l = literálně, ne jméno klávesy
+```
+
+`send-keys` posílá **klávesy**, ne příkaz: `Enter` musí být samostatný argument
+a bez `-l` by se slovo `Enter` uprostřed textu vzalo jako klávesa. A protože jde
+o klávesy, je tmuxu jedno, jestli je na druhé straně shell vůbec připravený —
+viz [Na co si dát pozor](#na-co-si-dát-pozor).
+
+### Přečíst výstup
+
+| Volba `capture-pane` | Co dělá |
+| --- | --- |
+| `-p` | Píše na stdout (jinak do tmux bufferu) |
+| `-S -` | Od začátku historie — nutné pro všechno, co odscrollovalo |
+| `-J` | Spojí zalomené řádky a ořízne koncové mezery |
+| `-e` | Ponechá escape sekvence (barvy) |
+| `-t app:0.1` | Cíl `session:window.pane` |
+
+Capture vrací obraz obrazovky, takže dostaneš i prázdné řádky až do spodního
+okraje panu. Useknutí:
+
+```bash
+tmux -L ci capture-pane -p -t app | tac | sed '/./,$!d' | tac
+```
+
+### Průběžný log (`pipe-pane`)
+
+Capture je jednorázový snímek. Když potřebuješ úplně všechno, co proces vypsal,
+napoj si na pane rouru:
+
+```bash
+tmux -L ci pipe-pane -t app 'cat >> /tmp/app.log'   # od teď logovat
+tmux -L ci pipe-pane -t app                         # bez příkazu = vypnout
+```
+
+Pane může mít jen jednu rouru; další `pipe-pane` tu předchozí zavře. Volba `-o`
+otevře rouru jen tehdy, když žádná neběží — díky tomu se dá stejný příkaz
+nabindovat na klávesu jako přepínač, ve skriptu ji ale nechceš.
+
+### Čekat na stav, ne na čas
+
+Když si můžeš sáhnout do spouštěného příkazu, je nejspolehlivější `wait-for`:
+
+```bash
+tmux -L ci send-keys -t app 'make test; tmux -L ci wait-for -S hotovo' Enter
+tmux -L ci wait-for hotovo
+```
+
+`wait-for kanal` blokuje, dokud někdo nepošle `wait-for -S kanal` se stejným
+jménem kanálu — deterministická synchronizace tam, kde by jinak byl `sleep`
+a hádání.
+
+Když do příkazu sáhnout nemůžeš, zbývá poll na capture — čekání na to, až se na
+obrazovce objeví text:
+
+```bash
+until tmux -L ci capture-pane -p -t app | grep -q 'READY'; do sleep 0.2; done
+```
+
+### Návratový kód
+
+tmux ho ven nepropaguje. Nejjednodušší je poslat ho stranou souborem:
+
+```bash
+tmux -L ci new-session -d -s app -x 200 -y 50 \
+  "make test; echo \$? > /tmp/rc; tmux -L ci wait-for -S hotovo"
+tmux -L ci wait-for hotovo
+exit "$(cat /tmp/rc)"
+```
+
+Nativní cesta je `remain-on-exit` — pane po doběhnutí nezmizí a výsledek zůstane
+viset v `#{pane_dead_status}`:
+
+```bash
+tmux -L ci new-session -d -s app -x 200 -y 50
+tmux -L ci set-option -t app remain-on-exit on
+tmux -L ci respawn-pane -k -t app 'make test'
+
+until [ "$(tmux -L ci display-message -p -t app '#{pane_dead}')" = 1 ]; do sleep 0.2; done
+tmux -L ci display-message -p -t app '#{pane_dead_status}'   # → návratový kód
+tmux -L ci capture-pane -p -S - -t app                       # → výstup
+```
+
+Volba musí být nastavená **dřív, než příkaz doběhne** — proto se založí prázdná
+session, nastaví se `remain-on-exit` a teprve pak se do panu pustí příkaz přes
+`respawn-pane -k` (`-k` zabije to, co v panu běželo předtím). Bez té volby zmizí
+s panem okno a s posledním oknem celá session, takže si nestihneš přečíst nic.
+
+A pozor: na obrazovce mrtvého panu je jen hláška `Pane is dead (status 3, …)` —
+původní výstup je až ve scrollbacku, čili capture s `-S -`.
+
+### Stav zvenčí
+
+| Příkaz | K čemu |
+| --- | --- |
+| `tmux has-session -t app` | Test existence (exit 0/1) |
+| `display-message -p -t app '#{pane_pid}'` | PID programu v panu |
+| `display-message -p -t app '#{pane_current_command}'` | Co v panu právě běží |
+| `display-message -p -t app '#{pane_dead} #{pane_dead_status}'` | Doběhlo to, a s jakým kódem |
+| `tmux run-shell 'cmd'` | Spustí shell příkaz ze serveru |
+| `tmux if-shell 'test -f x' 'cmd1' 'cmd2'` | Podmínka (hlavně v konfiguraci) |
+
+Idiom „připoj se, a když session neexistuje, založ ji“ patří ve skriptu psát
+přes `has-session` — `tmux new -A -s app` sice dělá totéž, ale bez terminálu
+spadne na `open terminal failed`:
+
+```bash
+tmux -L ci has-session -t app 2>/dev/null || tmux -L ci new-session -d -s app
+```
+
+### Na co si dát pozor
+
+- **Capture je obraz obrazovky, ne stream.** Progress bary, přepisy přes `\r`
+  a spinnery uvidíš v tom stavu, v jakém zrovna byly. Když potřebuješ všechno,
+  co proces vypsal, patří tam [`pipe-pane`](#průběžný-log-pipe-pane).
+- **Šířka panu láme řádky.** Grep na dlouhý řádek selže, když ho pane zalomil —
+  buď `-J`, nebo dost velké `-x`.
+- **Závod po startu.** `new-session` se vrátí dřív, než je shell připravený;
+  první `send-keys` může spadnout do prázdna. Počkej si na prompt, ne na
+  `sleep`.
+- **Úklid.** `tmux -L ci kill-server` na konci a v `trap`, jinak ti server
+  přežije skript.
 
 ---
 
