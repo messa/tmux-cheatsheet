@@ -135,8 +135,9 @@ i tudy — a navíc spousta věcí, na které zkratka není.
 ### key table
 
 Sada zkratek platná v daném režimu. Normálně se používá tabulka `prefix`
-(zkratky po stisku prefixu), v copy mode `copy-mode-vi` / `copy-mode`. Uvidíš to
-ve výpisu `tmux list-keys`.
+(zkratky po stisku prefixu), tabulka `root` drží klávesy fungující **bez**
+prefixu a v copy mode platí `copy-mode-vi` / `copy-mode`. Uvidíš to ve výpisu
+`tmux list-keys`.
 
 ---
 
@@ -475,22 +476,121 @@ set -g mouse on
 # Vi klávesy v copy mode
 setw -g mode-keys vi
 
-# Splity, které dědí aktuální adresář
+# Splity i nové okno dědí aktuální adresář
 bind '"' split-window -v -c "#{pane_current_path}"
 bind % split-window -h -c "#{pane_current_path}"
+bind c new-window -c "#{pane_current_path}"
+
+# Splity na klávesy, které vypadají jako výsledek
+bind | split-window -h -c "#{pane_current_path}"
+bind - split-window -v -c "#{pane_current_path}"
 
 # Rychlý reload konfigurace
+unbind r
 bind r source-file ~/.tmux.conf \; display "Config reloaded"
 
 # Bez prodlevy po Escape (jinak zlobí Vim)
 set -sg escape-time 10
 
-# Barvy
+# Focus události — Vim i TUI aplikace poznají, že pane získal/ztratil focus
+set -g focus-events on
+
+# Status zprávy zobrazovat delší dobu (default 750 ms)
+set -g display-time 2000
+
+# Barvy včetně true color (24-bit)
 set -g default-terminal "tmux-256color"
+set -ga terminal-features ",*:RGB"
 ```
 
 Po úpravě načti buď `prefix r` (s bindingem výše), nebo
 `tmux source-file ~/.tmux.conf`.
+
+Pár detailů, které v tom zápisu nejsou samozřejmé:
+
+- `unbind r` není potřeba (`bind r` původní binding přepíše sám), ale je to
+  zvyk — defaultně `prefix r` volá `refresh-client`. Nutné je jen tehdy, když
+  chceš zkratku zrušit a nic na ni nemapovat.
+- `-a` u `set` znamená **append** — přidá k existující hodnotě místo přepsání.
+  Proto `set -ga terminal-features ",*:RGB"` a čárka na začátku, která novou
+  položku oddělí od těch už nastavených. Bez `-a` bys zahodil vše ostatní.
+- `terminal-features` je serverová volba, takže se nastavuje s `-s`
+  (`set -as`); `-g` u ní tmux bere taky, proto ve světě potkáš obojí.
+- `#{pane_current_path}` v bindingu se vyhodnotí až při stisku zkratky, ne při
+  načtení konfigurace.
+
+### Zkratky bez prefixu (`bind -n`)
+
+`bind` bez přepínače mapuje do tabulky `prefix`. `bind -n` (zkratka za
+`-T root`) mapuje klávesu tak, že funguje **samostatně**, bez prefixu:
+
+```tmux
+# Přepínání panes Alt+šipkami bez prefixu
+bind -n M-Left  select-pane -L
+bind -n M-Right select-pane -R
+bind -n M-Up    select-pane -U
+bind -n M-Down  select-pane -D
+```
+
+Modifikátory se zapisují `C-` (Ctrl), `M-` (Alt/Meta), `S-` (Shift).
+
+Cena je, že tu klávesu už nikdy nedostane program běžící v panu — tmux ji
+sebere první. Proto se na `-n` váže jen to, co uvnitř nepotřebuješ (Alt+šipky
+umí kolidovat s pohybem po slovech v shellu nebo s editory).
+
+Defaultní `prefix Alt-šipka` (resize po 5 buňkách) tím nepřijde — ta je
+v tabulce `prefix`, takže obě zkratky vedle sebe žijí bez konfliktu.
+
+### Vlastní status bar
+
+```tmux
+set -g status-interval 5     # jak často se překresluje, v sekundách (default 15)
+set -g status-style "bg=colour236,fg=colour250"
+set -g status-left "#[bold] #S "
+set -g status-left-length 30 # default 10 znaků delší jména session odřízne
+set -g status-right "#[fg=colour244]%H:%M  %d.%m."
+setw -g window-status-format " #I:#W "
+setw -g window-status-current-style "bg=colour39,fg=colour232,bold"
+setw -g window-status-current-format " #I:#W "
+```
+
+`window-status-format` je jedna položka v seznamu oken uprostřed,
+`window-status-current-format` totéž pro aktuální okno. Ve formátech se dají
+použít krátké proměnné:
+
+| Zápis | Význam |
+| --- | --- |
+| `#S` | Jméno session |
+| `#I` | Index okna |
+| `#W` | Jméno okna |
+| `#P` | Index panu |
+| `#F` | Příznaky okna — `*` aktivní, `-` předchozí, `Z` zoomnuté, `!` bell |
+| `#H` / `#h` | Hostname / hostname bez domény |
+| `#{…}` | Dlouhý zápis (`#{session_name}`, `#{pane_current_path}`, … — viz [Výpisy](#vlastní-formát--f)) |
+| `#[fg=…,bg=…,bold]` | Změna stylu do konce řetězce, `#[default]` vrátí zpět |
+| `%H:%M`, `%d.%m.` | strftime — čas a datum |
+
+`colour0`–`colour255` je 256barevná paleta; se zapnutým RGB (viz výše) můžeš
+psát i `#rrggbb`. Status bar se dá přesunout nahoru přes
+`set -g status-position top`.
+
+### Titulek terminálu a panu
+
+```tmux
+set -g set-titles on
+set -g set-titles-string "#S:#W"
+set -g pane-border-status top
+```
+
+`set-titles` píše titulek do **hostitelského** okna terminálu (to, co vidíš
+v taskbaru nebo v přepínači oken) — hodí se, když máš otevřených víc terminálů
+s různými sessions. Bez `set-titles on` se `set-titles-string` neuplatní.
+
+`pane-border-status` vypíše titulek panu do jeho rámečku (`off` je default,
+dál `top` a `bottom`); obsah řídí `pane-border-format`, např.
+`set -g pane-border-format " #{pane_index}: #{pane_title} "`. Titulek panu si
+nastavuje program uvnitř (escape sekvencí — Claude Code to dělá průběžně sám),
+ručně jde přes `:select-pane -T jmeno`. Zabere to jeden řádek z každého panu.
 
 ---
 
