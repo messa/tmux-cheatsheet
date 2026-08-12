@@ -39,6 +39,17 @@ Zbytek jsou věci, které dostaneš, když už ho máš:
 - **Session na projekt.** Místo tabů terminálu, které zmizí s jeho zavřením,
   `tmux a -t projekt` — okna s nastavenými adresáři a rozdělanou prací přežijí
   restart terminálu, odhlášení i pád okenního správce.
+- **Stejné terminály odkudkoli.** Když všechno běží v tmuxu na dev VM, je
+  jedno, odkud se připojíš — počítač v kanceláři, počítač doma, tablet nebo
+  mobil (např. Blink) ukážou tutéž rozdělanou práci přesně ve stavu, ve
+  kterém jsi ji opustil. Práce bydlí na serveru, zařízení jsou jen okna
+  do ní; z mobilu tak jde jen mrknout, jak se tváří dlouho běžící
+  úloha nebo Claude Code, a případně odpovědět. Různě velkým displejům se
+  okno přizpůsobuje samo — od tmuxu 3.1 se řídí zařízením, na kterém právě
+  pracuješ (viz
+  [velikost okna](#víc-klientů-každý-na-jiném-okně-grouped-sessions));
+  na cestách pomůže kombinace s
+  [mosh](#mosh-a-eternal-terminal-jiná-vrstva).
 - **Panes na sledování.** Editor v jednom panu, testy ve druhém, `tail -f`
   logu ve třetím — všechno viditelné naráz.
 - **Dlouho běžící proces bez systemd.** `tmux new -d -s tunel 'ssh -L …'` —
@@ -491,16 +502,24 @@ Sessions ve skupině sdílí seznam oken, ale každá má vlastní aktivní okno
 Pokud nechceš sdílet celou sadu oken, ale jen některá, naskládej je do
 samostatné session ručně přes `:link-window -t jina-session`.
 
-> **Past na velikost okna.** tmux defaultně zmenší okno na velikost nejmenšího
-> připojeného klienta — na dvou různě velkých terminálech pak dostaneš kolem
-> okna rámeček z teček. Řešení:
+> **Velikost okna při různě velkých klientech.** Od tmuxu 3.1 je default
+> `window-size latest`: okno má velikost klienta, který v něm naposledy
+> pracoval. Střídání různě velkých zařízení tedy funguje samo od sebe —
+> okno se přizpůsobí tomu, na kterém právě píšeš; na větším displeji je
+> mezitím kolem okna rámeček z teček a zmizí prvním stiskem klávesy tam.
+> Stará poučka „tmux se řídí nejmenším klientem“ platila do verze 2.8.
+> Ladit má smysl až situaci, kdy se na totéž okno dívají dva klienti naráz
+> a přeskakování velikosti vadí:
 >
 > ```tmux
-> setw -g aggressive-resize on   # řídí se nejmenším klientem, který okno OPRAVDU zobrazuje
-> set -g window-size largest     # hrubší varianta: vždy podle největšího klienta
+> set -g window-size smallest    # vždy podle nejmenšího klienta (staré chování)
+> set -g window-size largest     # vždy podle největšího; menší klient vidí jen výřez
+> setw -g aggressive-resize on   # smallest/largest počítat jen z klientů, které okno OPRAVDU zobrazují
 > ```
 >
-> Pro grouped sessions je správná volba `aggressive-resize`.
+> Na `latest` nemá `aggressive-resize` vliv. A klient, který velikost nemá
+> ovlivňovat nikdy (projektor, mobil jen na koukání), se připojí s
+> `tmux attach -f ignore-size`.
 
 ---
 
