@@ -1007,8 +1007,9 @@ bez něj.
 Historii výstupu drží tmux, ne vnější terminál — každý pane je vlastní
 terminál s vlastním scrollbackem a ven jde jen aktuální obraz obrazovky.
 Proto nativní scrollback terminálu v tmuxu ukazuje nesmysly a v historii se
-scrolluje, hledá a kopíruje přes copy mode (se `set -g mouse on` i kolečkem
-myši).
+scrolluje, hledá a kopíruje přes copy mode (a [myš](#myš)). Kolik řádků
+historie tmux drží, určuje `history-limit` (viz [Konfigurace](#konfigurace))
+— platí pro panes vzniklé po jeho nastavení.
 
 | Zkratka | Co dělá |
 | --- | --- |
@@ -1018,21 +1019,57 @@ myši).
 | `prefix ]` | Vloží obsah tmux bufferu |
 | `prefix =` | Seznam bufferů, výběr co vložit |
 
-V copy mode s vi klávesami (`setw -g mode-keys vi`):
+Copy mode má dvě sady kláves a default je **emacs** — vi dostaneš
+automaticky jen tehdy, když proměnná `VISUAL` nebo `EDITOR` obsahuje „vi“.
+Když ti tabulka níže „nefunguje“ (hledání je `C-s`/`C-r` místo `/`, kopíruje
+se `C-Space` a `M-w`), jsi v emacs módu; ověří to `tmux show -gw mode-keys`.
+Zbytek sekce předpokládá vi klávesy:
+
+```tmux
+setw -g mode-keys vi
+```
 
 | Klávesa | Co dělá |
 | --- | --- |
 | `Space` | Začátek výběru |
 | `Enter` | Zkopíruje výběr a ukončí copy mode |
-| `v` | Začátek výběru (po nastavení bindingu, viz níže) |
-| `y` | Zkopíruje výběr |
+| `V` | Vybere celý řádek |
+| `C-v` | Přepne obdélníkový (sloupcový) výběr |
 | `/` | Hledá vpřed |
 | `?` | Hledá zpět |
 | `n` / `N` | Další / předchozí výsledek |
+| `w` / `b` / `e` | Slovo vpřed / zpět / na konec slova |
+| `0` / `$` | Začátek / konec řádku |
+| `C-u` / `C-d` | Půl obrazovky nahoru / dolů |
 | `g` / `G` | Začátek / konec historie |
 | `H` / `M` / `L` | Horní / prostřední / dolní řádek obrazovky |
 
-Dvě novější schopnosti copy mode (verze tmuxu v závorkách):
+Vimové `v` a `y` v defaultu překvapí: `v` nezačíná výběr, ale přepíná
+obdélník (totéž co `C-v`), a `y` není nabindované vůbec. Obojí dorovnávají
+dva bindingy v [Do systémové schránky](#do-systémové-schránky) — a o
+obdélník přemapováním `v` nepřijdeš, `C-v` zůstává.
+
+### Myš
+
+Se `set -g mouse on` (je v [doporučené konfiguraci](#konfigurace)) obsluhuje
+historii i myš, bez jediného vlastního bindingu:
+
+- **Kolečko** nahoru samo vstoupí do copy mode a scrolluje (po 5 řádcích);
+  doscrollováním zpátky dolů copy mode zase skončí.
+- **Tažení** vybírá; puštěním tlačítka se výběr zkopíruje a copy mode
+  skončí.
+- **Dvojklik / trojklik** zkopíruje slovo / řádek pod kurzorem.
+- **Shift + tažení** jde mimo tmux: terminál událost tmuxu vůbec nepředá
+  a udělá svůj nativní výběr (v iTerm2 s `Option`, v Terminal.app s `Fn`).
+
+Kopírování myší jde přes tytéž cesty jako klávesy — výběr skončí v tmux
+bufferu a s nastaveným `copy-command` i v systémové schránce (viz
+[Do systémové schránky](#do-systémové-schránky)).
+
+### Novinky posledních verzí
+
+Tři schopnosti, které starší návody neznají (minimální verze tmuxu
+v závorkách):
 
 - **Stav hledání je ve formátech.** `#{search_present}` (od 3.2) říká,
   jestli se vůbec hledá; `#{search_count}` (od 3.5) počet shod
@@ -1059,26 +1096,64 @@ Dvě novější schopnosti copy mode (verze tmuxu v závorkách):
   vynutí se přes `set -ga terminal-features ",*:hyperlinks"` (k zápisu viz
   [Konfigurace](#konfigurace)).
 
-Kopírování do systémové schránky — tmux má vlastní buffery oddělené od schránky
-systému, takže výběr je potřeba prohnat externím nástrojem:
+- **Skoky po promptech** (od 3.4). `send -X next-prompt` / `previous-prompt`
+  skáčou historií z promptu na prompt — místo scrollování „o obrazovku výš
+  a hledat, kde příkaz začal“. Chce to shell integraci: shell musí prompty
+  značkovat sekvencí OSC 133 (`\033]133;A\033\\` v `PS1`), jinak klávesy
+  neudělají nic. Volba `-o` skočí místo promptu na začátek výstupu příkazu.
+  Defaultní binding není:
+
+  ```tmux
+  bind -T copy-mode-vi K send -X previous-prompt
+  bind -T copy-mode-vi J send -X next-prompt
+  ```
+
+### Do systémové schránky
+
+tmux má vlastní buffery oddělené od schránky systému — kopírování v copy
+mode plní je, ne schránku. Do schránky vedou dvě cesty.
+
+**`copy-command`** (od 3.2): všechny defaultní kopírovací akce (`Enter`,
+`M-w`, puštění myši, dvojklik, …) jsou interně `copy-pipe` a bez argumentu
+pošlou výběr do příkazu z téhle volby. Jeden řádek podle systému — a k tomu
+dorovnání vimového `v`/`y` z tabulky výše:
 
 ```tmux
+set -s copy-command 'wl-copy'                        # Wayland
+# set -s copy-command 'xclip -selection clipboard'   # X11
+# set -s copy-command 'pbcopy'                       # macOS
+
 bind -T copy-mode-vi v send -X begin-selection
-
-# Linux, X11
-bind -T copy-mode-vi y send -X copy-pipe-and-cancel "xclip -selection clipboard"
-
-# Linux, Wayland
-bind -T copy-mode-vi y send -X copy-pipe-and-cancel "wl-copy"
-
-# macOS
-bind -T copy-mode-vi y send -X copy-pipe-and-cancel "pbcopy"
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel  # bez argumentu → copy-command
 ```
 
-Alternativně `set -g set-clipboard on` — tmux pak posílá výběr do schránky přes
-escape sekvenci OSC 52, což funguje i přes SSH, ale terminál to musí podporovat
-a mít povolené (schránka musí projít oběma stranami překladu, viz
-[tmux je uprostřed](#tmux-je-uprostřed)).
+(Starší návody místo `copy-command` dávají příkaz přímo do bindingu —
+`… copy-pipe-and-cancel "xclip -selection clipboard"`. Funguje to taky, ale
+platí to jen pro tu jednu klávesu; myš a emacs klávesy schránku neplní.)
+
+**OSC 52** (volba `set-clipboard`): tmux pošle výběr do schránky escape
+sekvencí přes vnější terminál, takže funguje i přes SSH bez `xclip` na
+serveru. Default `external` to zkouší sám od sebe — pokud vnější terminál
+OSC 52 podporuje a má povolenou (schránka musí projít oběma stranami
+překladu, viz [tmux je uprostřed](#tmux-je-uprostřed)), možná ti schránka
+funguje i bez `copy-command`. Hodnota `on` navíc totéž dovolí programům
+běžícím uvnitř panes.
+
+### Buffery ze shellu
+
+Buffer není jen mezipaměť pro `prefix ]` — jde k němu ze skriptů, takže
+copy mode má most do [Automatizace](#automatizace-a-skriptování):
+
+```bash
+tmux save-buffer -                # vypíše nejnovější buffer na stdout
+tmux set-buffer 'text'            # naplní buffer zvenčí
+tmux paste-buffer -t prace:0.1    # vloží buffer do konkrétního panu
+tmux list-buffers                 # bufferů je celý stack, tohle je výpis
+```
+
+A opačným směrem: `capture-pane` bez `-p` uloží obrazovku právě do bufferu
+(viz [Přečíst výstup](#přečíst-výstup)) — buffer je společný meziprostor
+copy mode, myši i skriptů.
 
 ---
 
