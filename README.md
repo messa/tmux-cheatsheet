@@ -214,7 +214,9 @@ eval "$(tmux show-env -s SSH_AUTH_SOCK)"
 ```
 
 (`show-env -s` vypíše hodnotu ze session jako shellový `export`, proto
-`eval`; hodí se z toho udělat alias.)
+`eval`; hodí se z toho udělat alias. Patří ke světu *bez* trvalého řešení
+níže — po něm už `SSH_AUTH_SOCK` v prostředí session není, žije jen
+globálně (`show-env -gs`), a hlavně už záchranu nepotřebuješ.)
 
 Trvalé řešení: nedávat shellům cestu, která se mění, ale stabilní symlink,
 který každé přihlášení přehodí na živý socket:
@@ -234,9 +236,17 @@ set -g update-environment "DISPLAY KRB5CCNAME SSH_ASKPASS SSH_AGENT_PID SSH_CONN
 ```
 
 `setenv` = `set-environment`; `-g` znamená globální prostředí serveru, ze
-kterého dědí každý nový pane. Dvě zrádnosti `~/.ssh/rc`: nesmí nic psát na
-stdout (jinak rozbije přihlášení) a jakmile existuje, sshd přestane sám volat
-`xauth` (autentizace X11 forwardingu, viz níže) — musí ho zavolat ten skript.
+kterého dědí každý nový pane. Na běžícím serveru zbývá poslední krok:
+sessions založené před změnou mají starou cestu zapsanou ve svém prostředí
+session, a to má před globálním přednost — jednorázově ji smaž
+(`tmux setenv -u SSH_AUTH_SOCK` v každé z nich), jinak jejich nové panes
+dál dostávají mrtvý socket.
+
+Dvě zrádnosti `~/.ssh/rc`. Nesmí nic psát na stdout — interaktivnímu
+přihlášení to nevadí, ale rozbije to `scp`, `sftp` i `rsync`: jejich
+protokol jde právě přes stdout a sshd `~/.ssh/rc` spouští i pro ně.
+A jakmile soubor existuje, sshd přestane sám volat `xauth` (autentizace X11
+forwardingu, viz níže) — musí ho zavolat ten skript.
 
 Tentýž problém má i `DISPLAY` a `SSH_CONNECTION` — proto jsou
 v `update-environment` taky. **X11 forwarding** (`ssh -X`) je obdoba agent
@@ -802,7 +812,7 @@ sám spustí příkaz, když nastane událost.
 
 ```tmux
 set-hook -g client-attached 'display "vítej zpátky"'
-set-hook -g after-split-window 'select-layout tiled'   # po splitu vždy srovnat layout
+set-hook -g after-split-window 'select-layout tiled'   # pozor: srovná i skriptované splity
 ```
 
 Jména hooků jsou dvojího druhu: **události** (`session-created`,
@@ -810,7 +820,8 @@ Jména hooků jsou dvojího druhu: **události** (`session-created`,
 `pane-focus-in`, `alert-activity`, `alert-silence`, `window-renamed`, …;
 úplný seznam v `man tmux`, sekce HOOKS) a **`after-<příkaz>`**, které se
 spustí po doběhnutí skoro kteréhokoli tmux příkazu (`after-new-window`,
-`after-split-window`, `after-resize-pane`, …).
+`after-split-window`, `after-resize-pane`, …). S jednou výjimkou: příkaz
+spuštěný z jiného hooku svůj after-* hook nevyvolá — hooky se neřetězí.
 
 Pravidla hry:
 
@@ -821,38 +832,58 @@ Pravidla hry:
   `set-hook -gu jmeno` hook zruší, bez `-g` platí jen pro aktuální session.
   `set-hook` bez indexu přepíše všechno; víc akcí na jednu událost se věší
   přes indexy — `set-hook -g 'session-created[1]' …`.
-- Uvnitř hooku říkají formátové proměnné, koho se událost týká:
+- `-g` znamená opravdu všude: hook vystřelí i pro skriptované příkazy
+  a sessions, na které nemyslíš. Globální `after-split-window` výše takhle
+  přerovná i split z automatizace — `split-window -l 5` pak vyrobí tiled
+  pane místo pěti řádků a `-l` vypadá rozbité. Co má hlídat jedno místo,
+  věš na session: `set-hook -t app …`.
+- U **událostních** hooků říkají formátové proměnné, koho se událost týká:
   `#{hook_session}`, `#{hook_window}`, `#{hook_pane}` (ID),
   `#{hook_session_name}`, `#{hook_window_name}` (jména) a u `client-*`
   hooků `#{hook_client}` — jméno klienta, což je typicky jeho tty
-  (`/dev/pts/3`).
+  (`/dev/pts/3`). V `after-*` hoocích jsou všechny prázdné.
 - Formáty ale expanduje jen příkaz, který to umí sám (`run-shell`,
   `display-message`, …) — `set` uvnitř hooku uloží `#{…}` doslova;
   na expanzi při zápisu je `set -F`.
 
-Tři praktické příklady. Watchdog — spadlý proces se sám nastartuje znovu
-(`pane-died` vyžaduje `remain-on-exit`, viz [Návratový kód](#návratový-kód);
-a pozor, příkaz padající hned po startu se takhle restartuje pořád dokola):
+Tři praktické příklady. Watchdog — spadlý proces v hlídané session se sám
+nastartuje znovu (`pane-died` vyžaduje `remain-on-exit`, viz
+[Návratový kód](#návratový-kód)):
 
-```tmux
-set -g remain-on-exit on
-set-hook -g pane-died 'respawn-pane -k'
+```bash
+tmux set-option -t app remain-on-exit on
+tmux set-hook -t app pane-died 'respawn-pane'
 ```
 
-A desktop notifikace místo hvězdičky ve status baru — dotažení
+Schválně bez `-g`: globální varianta udělá nesmrtelné všechny panes na
+serveru — `exit` i Ctrl-D pak místo zavření panu respawnou nový shell,
+všude. A příkaz, který padá hned po startu, se restartuje pořád dokola
+(stovky respawnů za sekundu); brzda je udělat z hooku
+`run-shell -b "sleep 1; tmux respawn-pane -t '#{hook_pane}'"`.
+
+A desktop notifikace místo nenápadného `~` ve status baru — dotažení
 [monitor-silence](#upozornění-že-příkaz-doběhl):
 
 ```tmux
-setw monitor-silence 30
-set-hook -g alert-silence 'run-shell "notify-send \"Build doběhl\""'
+setw -g monitor-silence 30   # v configu nutně s -g (žádné „aktuální okno“ tam není)
+set -g silence-action any    # default „other“ vynechává aktuální okno
+set-hook -g alert-silence 'run-shell -b "notify-send \"Build doběhl\""'
 ```
+
+Dvě podmínky, o kterých se snadno neví: alert vystřelí, jen když je
+připojený klient, a pro každé okno jen jednou — dokud se na okno znovu
+nepodíváš, další cykly ticha nehlásí. A `notify-send` předpokládá desktopový
+notifikační démon; na headless serveru skončí chybou a neuvidíš nic.
 
 A evidence připojení, `hook_client` v akci — na sdíleném stroji vidíš,
 které tty se kdy připojilo:
 
 ```tmux
-set-hook -g client-attached 'run-shell -b "echo #{hook_client} >> ~/attach.log"'
+set-hook -g client-attached 'run-shell -b "echo $(date +%F.%T) #{hook_client} >> ~/attach.log"'
 ```
+
+(`$(date …)` vyhodnotí až shell při běhu hooku, proto se zaloguje skutečný
+čas připojení.)
 
 ### Na co si dát pozor
 
@@ -900,23 +931,27 @@ V copy mode s vi klávesami (`setw -g mode-keys vi`):
 | `g` / `G` | Začátek / konec historie |
 | `H` / `M` / `L` | Horní / prostřední / dolní řádek obrazovky |
 
-Od tmuxu 3.5 copy mode umí dvě věci navíc:
+Dvě novější schopnosti copy mode (verze tmuxu v závorkách):
 
-- **Stav hledání je ve formátech.** `#{search_count}` říká počet shod
-  (`#{search_count_partial}` = 1, dokud tmux ještě dopočítává),
-  `#{search_present}`, jestli se vůbec hledá. Hlavně pro skripty —
-  `display -p` v copy mode je přečte.
-- **OSC 8 hyperlinky.** Escape sekvence, kterou program k vypsanému textu
-  přibalí neviditelné URL — obdoba `<a href>` z HTML pro terminál: na
+- **Stav hledání je ve formátech.** `#{search_present}` (od 3.2) říká,
+  jestli se vůbec hledá; `#{search_count}` (od 3.5) počet shod
+  (`#{search_count_partial}` = 1, dokud tmux ještě dopočítává). Hlavně pro
+  skripty — `display -p` v copy mode je přečte.
+- **OSC 8 hyperlinky** (od 3.4). Escape sekvence, kterou program k vypsanému
+  textu přibalí neviditelné URL — obdoba `<a href>` z HTML pro terminál: na
   obrazovce je jméno souboru, kliknutím (typicky Ctrl+klik) se otevře cíl.
   Vypisuje je třeba `ls --hyperlink` nebo gcc v chybových hláškách; tmux si
-  je ukládá a dává formátům: `#{copy_cursor_hyperlink}` je cíl odkazu pod
-  kurzorem v copy mode, `#{mouse_hyperlink}` pod myší. Otevírání jednou
-  klávesou:
+  je ukládá a dává formátům: `#{mouse_hyperlink}` je cíl odkazu pod myší,
+  `#{copy_cursor_hyperlink}` (od 3.5) pod kurzorem v copy mode. Otevírání
+  jednou klávesou:
 
   ```tmux
-  bind -T copy-mode-vi o run-shell -b 'xdg-open "#{copy_cursor_hyperlink}"'
+  bind -T copy-mode-vi O if -F '#{copy_cursor_hyperlink}' 'run-shell -b "xdg-open \"#{copy_cursor_hyperlink}\""'
   ```
+
+  (Velké `O` — malé `o` má v copy-mode-vi default, skok na druhý konec
+  výběru. A `if -F` zajistí, že stisk mimo odkaz neudělá nic, místo chyby
+  z `xdg-open ""`.)
 
   Interně to funguje vždy; aby odkazy byly klikací i ve vnějším terminálu,
   musí mít featuru `hyperlinks` — tmux ji u známých terminálů pozná sám,
