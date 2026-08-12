@@ -1392,7 +1392,13 @@ k tomu patří tři věci:
   mouse tracking tam nejsou v pořádku, double-click může rozhodit terminál.
   Normální tmux uvnitř iTerm2 (bez `-CC`) je OK.
 - **tmux do řady 3.6 včetně nemá synchronized output**, takže uvidíš víc blikání
-  než mimo tmux. Novější tmux si Claude Code detekuje sám.
+  než mimo tmux. Synchronized output (režim 2026, zapínaný escape sekvencí
+  DECSET) je dohoda mezi aplikací a terminálem: aplikace obalí celé překreslení
+  obrazovky značkami „začátek/konec dávky“ a terminál ho vykreslí naráz, až
+  když je dávka celá — bez toho kreslí průběžně a rozpracované mezistavy
+  překreslování jsou vidět jako blikání. tmux je emulátor terminálu uprostřed,
+  takže režim musí podporovat sám — umí to od verze 3.7 a Claude Code si
+  novější tmux detekuje automaticky.
 - **Konverzace není v nativním scrollbacku**, takže ji tmux copy mode nevidí.
   Řešení: `Ctrl-o` (transcript mode) a pak `[` — vysype celou konverzaci do
   nativního scrollbacku a tam už se dá hledat přes `prefix [` jako cokoli jiného.
