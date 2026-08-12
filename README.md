@@ -123,10 +123,15 @@ vyplývá; šipka vede na sekci s podrobnostmi.
   z globálních window options, session z globálních session options — proto
   je v configu skoro všude `-g` a proto „nefungující“ volbu obvykle přebíjí
   lokální hodnota. → [`set` vs `setw`](#set-vs-setw-a-druhy-options)
-- **Prostředí se dědí v čase, ne živě.** Proměnné prostředí se zachytí při
-  vzniku serveru a session; nový pane dědí prostředí session, ne tvého
-  aktuálního shellu. Proto po novém přihlášení „nefunguje“ ve starých panes
-  SSH agent.
+- **Prostředí je snímek, ne živý stav.** OS environment variables se
+  okopírují při vzniku serveru a session a od té chvíle žijí vlastním
+  životem; nový pane je dostane od session, ne od tvého aktuálního shellu.
+  Proto po novém přihlášení „nefunguje“ ve starých panes SSH agent.
+  Pracovní adresář není environment variable, ale defaultně se chová
+  stejně: nové okno dostane adresář *session*, ne panu, ve kterém stojíš.
+  Živé „dědění“ aktuálního adresáře dělá až binding
+  s `-c "#{pane_current_path}"` (viz [Konfigurace](#konfigurace)) — tmux si
+  tehdy adresář panu přečte přímo z OS.
   → [SSH agent, který přežije reattach](#ssh-agent-který-přežije-reattach)
 - **Server nepřežije reboot.** tmux chrání před ztrátou *spojení*, ne
   stroje — sessions žijí jen v paměti serveru. Na přežití rebootu je
