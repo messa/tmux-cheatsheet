@@ -1690,9 +1690,9 @@ nainstalovat jediný plugin, je to tenhle.
 
 - **tmux-copycat** (regex hledání) — od tmuxu 3.1 je regex hledání vestavěné
   v [copy mode](#copy-mode-a-schránka).
-- **tmux-yank** — z velké části ho nahradí `set -g set-clipboard on` (OSC 52)
-  nebo tři řádky s `copy-pipe-and-cancel`, viz
-  [Copy mode a schránka](#copy-mode-a-schránka).
+- **tmux-yank** — z velké části ho nahradí jeden řádek s `copy-command`,
+  případně OSC 52 přes `set-clipboard`, viz
+  [Do systémové schránky](#do-systémové-schránky).
 - **tmux-prefix-highlight** — jeden řádek s `#{?client_prefix,…}`, viz
   [Status bar ví, že jsi zmáčkl prefix](#status-bar-ví-že-jsi-zmáčkl-prefix).
 - **tmux-sensible** — půlka jeho nastavení se s moderním tmuxem už kryje.
