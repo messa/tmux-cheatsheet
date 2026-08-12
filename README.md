@@ -5,9 +5,9 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 ## Obsah
 
 - [Na co je to dobré](#na-co-je-to-dobré)
-- [Méně známé triky](#méně-známé-triky)
 - [Slovníček pojmů](#slovníček-pojmů)
 - [Jak se čtou zkratky](#jak-se-čtou-zkratky)
+- [Méně známé triky](#méně-známé-triky)
 - [Sessions](#sessions)
 - [Windows](#windows)
 - [Panes](#panes)
@@ -73,6 +73,158 @@ Zbytek jsou věci, které dostaneš, když už ho máš:
 Vedlejší efekt: čím víc věcí žije v tmuxu, tím míň záleží na tom, jaký
 terminálový emulátor zrovna používáš — zkratky, splity i sessions si neseš
 s sebou.
+
+---
+
+## Slovníček pojmů
+
+Jak to do sebe zapadá:
+
+```text
+     ┌────────────┐            ┌────────────┐
+     │  client A  │            │  client B  │
+     │ (terminál) │            │ (SSH)      │
+     └─────┬──────┘            └─────┬──────┘
+           │ attach / detach         │
+           ▼                         ▼
+┌ server (proces na pozadí) ─────────────────────────────┐
+│                                                        │
+│ ┌ session: web ──────────────────┐ ┌ session: api ───┐ │
+│ │                                │ │                 │ │
+│ │ ┌ window 0 ─┐ ┌ window 1 ────┐ │ │ ┌ window 0 ───┐ │ │
+│ │ │           │ │      │ pane  │ │ │ │             │ │ │
+│ │ │   pane    │ │ pane ├───────┤ │ │ │    pane     │ │ │
+│ │ │           │ │      │ pane  │ │ │ │             │ │ │
+│ │ └───────────┘ └──────┴───────┘ │ │ └─────────────┘ │ │
+│ └────────────────────────────────┘ └─────────────────┘ │
+└────────────────────────────────────────────────────────┘
+```
+
+Každý pane je samostatný terminál, ve kterém běží (typicky) shell. Oba klienti
+se také mohou připojit ke stejné session naráz — viz
+[grouped sessions](#víc-klientů-každý-na-jiném-okně-grouped-sessions).
+
+### server
+
+Proces, který běží na pozadí a drží všechny sessions, windows a panes. Startuje se
+automaticky při prvním `tmux` a běží dál, i když zavřeš terminál. Proto ti věci
+v tmuxu přežijí zavření okna terminálu nebo odpojení SSH.
+
+Server je **per OS uživatel** — každý účet má svůj, komunikuje se s ním přes
+socket v `/tmp/tmux-<UID>/` (adresář má práva `700`; jinam ho přesune
+`$TMUX_TMPDIR`). Sessions jiných uživatelů proto nevidíš a `sudo tmux` mluví
+s úplně jiným serverem. Přesněji je server vázaný na *socket* — jeden uživatel
+jich může mít víc, viz [Víc serverů vedle sebe](#víc-serverů-vedle-sebe).
+
+Když skončí poslední session, server se ukončí.
+
+### socket
+
+Unixový socket — speciální soubor, přes který si dva procesy na jednom
+stroji posílají data (v `ls -l` má typ `s`; nemá IP ani port, jen cestu
+v souborovém systému). Každé `tmux …` v shellu je ve skutečnosti klient,
+který přes socket předá příkaz serveru — proto se jiný server vybírá volbou
+`-L jmeno` (jiné jméno socketu) nebo `-S /cesta/k/socketu`. Přes unixový
+socket komunikuje i SSH agent, viz
+[trik s reattachem](#ssh-agent-který-přežije-reattach).
+
+### client
+
+Tvůj terminál připojený k serveru. K jedné session může být připojeno víc klientů
+najednou (typicky když sdílíš session s kolegou nebo ji máš otevřenou na dvou
+monitorech).
+
+### session
+
+Nejvyšší úroveň skupiny — jedna "pracovní plocha". Obsahuje jedno nebo víc oken
+(windows). Session má jméno (`0`, `1`, … nebo vlastní, např. `web`, `api`).
+
+Typicky se dělá jedna session na projekt. Session žije na serveru nezávisle na
+tvém terminálu — od toho je celý tmux: **detach** (odpojíš se, session běží dál)
+a **attach** (znovu se připojíš).
+
+### session group
+
+Několik sessions sdílejících stejnou sadu oken, ale každá s vlastním aktivním
+oknem. Vzniká přes `new-session -t`. Používá se, když chceš mít v každém
+terminálu otevřené jiné okno téhož projektu — viz
+[Víc klientů, každý na jiném okně](#víc-klientů-každý-na-jiném-okně-grouped-sessions).
+
+### window
+
+Okno uvnitř session — obdoba záložky (tabu) v terminálu. V daný okamžik vidíš
+v session právě jedno window. Seznam oken je ve status baru dole.
+
+Každé window má číslo (index) a jméno. Jméno se defaultně mění podle běžícího
+programu, dá se přejmenovat.
+
+### pane
+
+Rozdělená část okna — jeden konkrétní terminál s jedním shellem. Window se dá
+rozřezat na libovolný počet panes horizontálně i vertikálně, všechny vidíš
+najednou vedle sebe.
+
+Když se v panu ukončí shell (`exit`, Ctrl-D), pane zmizí. Když zmizí poslední
+pane v okně, zmizí okno. Když zmizí poslední okno, skončí session.
+
+**Hierarchie:** `server → session → window → pane`
+
+### prefix
+
+Klávesová zkratka, kterou uvedeš každý tmux příkaz, aby tmux poznal, že klávesa
+patří jemu a ne programu uvnitř. Defaultně **`Ctrl-b`**.
+
+Zápis `prefix c` znamená: stiskni `Ctrl-b`, pusť, pak stiskni `c`.
+
+Hodně lidí si prefix mění na `Ctrl-a` (dědictví ze screenu, na klávesnici blíž),
+viz [Konfigurace](#konfigurace).
+
+### status bar
+
+Řádek dole. Vlevo jméno session, uprostřed seznam oken, vpravo hostname a čas.
+Aktuální okno je označené `*`, předchozí `-`.
+
+### detach / attach
+
+**Detach** = odpojení klienta od session, všechno uvnitř běží dál na serveru.
+**Attach** = opětovné připojení. Toto je hlavní důvod, proč tmux používat na
+vzdálených serverech — spadne ti SSH, ale procesy běží dál.
+
+### copy mode
+
+Režim, ve kterém můžeš scrollovat historií výstupu, hledat v ní a kopírovat text.
+Dokud jsi v copy mode, klávesy nejdou do shellu. Zapíná se `prefix [`, ven
+`q` (nebo `Escape`).
+
+### layout
+
+Předdefinované rozvržení panes v okně (`even-horizontal`, `main-vertical`, …).
+Přepíná se `prefix Space`.
+
+### command mode
+
+Řádek pro psaní tmux příkazů přímo (jako `:` ve Vimu). Otevře se `prefix :`,
+napíšeš např. `new-window -n logs`. Všechno, co jde přes klávesovou zkratku, jde
+i tudy — a navíc spousta věcí, na které zkratka není.
+
+### key table
+
+Sada zkratek platná v daném režimu. Normálně se používá tabulka `prefix`
+(zkratky po stisku prefixu), tabulka `root` drží klávesy fungující **bez**
+prefixu a v copy mode platí `copy-mode-vi` / `copy-mode`. Uvidíš to ve výpisu
+`tmux list-keys`.
+
+---
+
+## Jak se čtou zkratky
+
+- `prefix c` = stiskni `Ctrl-b`, pusť, pak `c`
+- `Ctrl-b c` = totéž
+- `tmux ls` = příkaz do shellu (mimo tmux i uvnitř)
+- `:new-window` = tmux příkaz zadaný přes `prefix :`
+
+Skoro každá zkratka má svůj příkazový ekvivalent — zkratka `prefix c` volá
+příkaz `new-window`.
 
 ---
 
@@ -285,158 +437,6 @@ při učení zkratek: vidíš, že prefix „drží“.
   interaktivně, ale ve skriptu bez terminálu spadne na `open terminal failed`
   (z `new` se stane attach). Tam patří
   `tmux has-session -t x 2>/dev/null || tmux new -d -s x`.
-
----
-
-## Slovníček pojmů
-
-Jak to do sebe zapadá:
-
-```text
-     ┌────────────┐            ┌────────────┐
-     │  client A  │            │  client B  │
-     │ (terminál) │            │ (SSH)      │
-     └─────┬──────┘            └─────┬──────┘
-           │ attach / detach         │
-           ▼                         ▼
-┌ server (proces na pozadí) ─────────────────────────────┐
-│                                                        │
-│ ┌ session: web ──────────────────┐ ┌ session: api ───┐ │
-│ │                                │ │                 │ │
-│ │ ┌ window 0 ─┐ ┌ window 1 ────┐ │ │ ┌ window 0 ───┐ │ │
-│ │ │           │ │      │ pane  │ │ │ │             │ │ │
-│ │ │   pane    │ │ pane ├───────┤ │ │ │    pane     │ │ │
-│ │ │           │ │      │ pane  │ │ │ │             │ │ │
-│ │ └───────────┘ └──────┴───────┘ │ │ └─────────────┘ │ │
-│ └────────────────────────────────┘ └─────────────────┘ │
-└────────────────────────────────────────────────────────┘
-```
-
-Každý pane je samostatný terminál, ve kterém běží (typicky) shell. Oba klienti
-se také mohou připojit ke stejné session naráz — viz
-[grouped sessions](#víc-klientů-každý-na-jiném-okně-grouped-sessions).
-
-### server
-
-Proces, který běží na pozadí a drží všechny sessions, windows a panes. Startuje se
-automaticky při prvním `tmux` a běží dál, i když zavřeš terminál. Proto ti věci
-v tmuxu přežijí zavření okna terminálu nebo odpojení SSH.
-
-Server je **per OS uživatel** — každý účet má svůj, komunikuje se s ním přes
-socket v `/tmp/tmux-<UID>/` (adresář má práva `700`; jinam ho přesune
-`$TMUX_TMPDIR`). Sessions jiných uživatelů proto nevidíš a `sudo tmux` mluví
-s úplně jiným serverem. Přesněji je server vázaný na *socket* — jeden uživatel
-jich může mít víc, viz [Víc serverů vedle sebe](#víc-serverů-vedle-sebe).
-
-Když skončí poslední session, server se ukončí.
-
-### socket
-
-Unixový socket — speciální soubor, přes který si dva procesy na jednom
-stroji posílají data (v `ls -l` má typ `s`; nemá IP ani port, jen cestu
-v souborovém systému). Každé `tmux …` v shellu je ve skutečnosti klient,
-který přes socket předá příkaz serveru — proto se jiný server vybírá volbou
-`-L jmeno` (jiné jméno socketu) nebo `-S /cesta/k/socketu`. Přes unixový
-socket komunikuje i SSH agent, viz
-[trik s reattachem](#ssh-agent-který-přežije-reattach).
-
-### client
-
-Tvůj terminál připojený k serveru. K jedné session může být připojeno víc klientů
-najednou (typicky když sdílíš session s kolegou nebo ji máš otevřenou na dvou
-monitorech).
-
-### session
-
-Nejvyšší úroveň skupiny — jedna "pracovní plocha". Obsahuje jedno nebo víc oken
-(windows). Session má jméno (`0`, `1`, … nebo vlastní, např. `web`, `api`).
-
-Typicky se dělá jedna session na projekt. Session žije na serveru nezávisle na
-tvém terminálu — od toho je celý tmux: **detach** (odpojíš se, session běží dál)
-a **attach** (znovu se připojíš).
-
-### session group
-
-Několik sessions sdílejících stejnou sadu oken, ale každá s vlastním aktivním
-oknem. Vzniká přes `new-session -t`. Používá se, když chceš mít v každém
-terminálu otevřené jiné okno téhož projektu — viz
-[Víc klientů, každý na jiném okně](#víc-klientů-každý-na-jiném-okně-grouped-sessions).
-
-### window
-
-Okno uvnitř session — obdoba záložky (tabu) v terminálu. V daný okamžik vidíš
-v session právě jedno window. Seznam oken je ve status baru dole.
-
-Každé window má číslo (index) a jméno. Jméno se defaultně mění podle běžícího
-programu, dá se přejmenovat.
-
-### pane
-
-Rozdělená část okna — jeden konkrétní terminál s jedním shellem. Window se dá
-rozřezat na libovolný počet panes horizontálně i vertikálně, všechny vidíš
-najednou vedle sebe.
-
-Když se v panu ukončí shell (`exit`, Ctrl-D), pane zmizí. Když zmizí poslední
-pane v okně, zmizí okno. Když zmizí poslední okno, skončí session.
-
-**Hierarchie:** `server → session → window → pane`
-
-### prefix
-
-Klávesová zkratka, kterou uvedeš každý tmux příkaz, aby tmux poznal, že klávesa
-patří jemu a ne programu uvnitř. Defaultně **`Ctrl-b`**.
-
-Zápis `prefix c` znamená: stiskni `Ctrl-b`, pusť, pak stiskni `c`.
-
-Hodně lidí si prefix mění na `Ctrl-a` (dědictví ze screenu, na klávesnici blíž),
-viz [Konfigurace](#konfigurace).
-
-### status bar
-
-Řádek dole. Vlevo jméno session, uprostřed seznam oken, vpravo hostname a čas.
-Aktuální okno je označené `*`, předchozí `-`.
-
-### detach / attach
-
-**Detach** = odpojení klienta od session, všechno uvnitř běží dál na serveru.
-**Attach** = opětovné připojení. Toto je hlavní důvod, proč tmux používat na
-vzdálených serverech — spadne ti SSH, ale procesy běží dál.
-
-### copy mode
-
-Režim, ve kterém můžeš scrollovat historií výstupu, hledat v ní a kopírovat text.
-Dokud jsi v copy mode, klávesy nejdou do shellu. Zapíná se `prefix [`, ven
-`q` (nebo `Escape`).
-
-### layout
-
-Předdefinované rozvržení panes v okně (`even-horizontal`, `main-vertical`, …).
-Přepíná se `prefix Space`.
-
-### command mode
-
-Řádek pro psaní tmux příkazů přímo (jako `:` ve Vimu). Otevře se `prefix :`,
-napíšeš např. `new-window -n logs`. Všechno, co jde přes klávesovou zkratku, jde
-i tudy — a navíc spousta věcí, na které zkratka není.
-
-### key table
-
-Sada zkratek platná v daném režimu. Normálně se používá tabulka `prefix`
-(zkratky po stisku prefixu), tabulka `root` drží klávesy fungující **bez**
-prefixu a v copy mode platí `copy-mode-vi` / `copy-mode`. Uvidíš to ve výpisu
-`tmux list-keys`.
-
----
-
-## Jak se čtou zkratky
-
-- `prefix c` = stiskni `Ctrl-b`, pusť, pak `c`
-- `Ctrl-b c` = totéž
-- `tmux ls` = příkaz do shellu (mimo tmux i uvnitř)
-- `:new-window` = tmux příkaz zadaný přes `prefix :`
-
-Skoro každá zkratka má svůj příkazový ekvivalent — zkratka `prefix c` volá
-příkaz `new-window`.
 
 ---
 
