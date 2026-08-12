@@ -214,6 +214,14 @@ Sada zkratek platná v daném režimu. Normálně se používá tabulka `prefix`
 prefixu a v copy mode platí `copy-mode-vi` / `copy-mode`. Uvidíš to ve výpisu
 `tmux list-keys`.
 
+### option (volba)
+
+Nastavení, kterým se řídí chování tmuxu — od prefixu přes barvy po délku
+historie. Podle toho, čeho se týkají, jsou čtyři druhy: server, session,
+window a pane options. Nastavují se příkazem `set` (= `set-option`);
+window options mají historickou zkratku `setw`. Podrobně v
+[Konfiguraci](#set-vs-setw-a-druhy-options).
+
 ---
 
 ## Jak se čtou zkratky
@@ -1102,6 +1110,38 @@ Pár detailů, které v tom zápisu nejsou samozřejmé:
   naposledy aktivní session, místo aby tě vyhodil na plochu. Ohleduplnější
   hodnota `no-detached` přepíná jen do sessions, ke kterým nikdo připojený
   není — a když taková není, normálně tě odpojí.
+
+### `set` vs `setw` a druhy options
+
+`set` je alias `set-option`, `setw` alias `set-window-option`. Options
+mají čtyři druhy podle toho, čeho se týkají — server, session, window
+a pane — a window options historicky měly vlastní příkaz. Dnes je `setw`
+jen ekvivalent `set -w` (man page tmuxu 3.5 už `set-window-option` ani
+neuvádí, příkaz zůstává kvůli kompatibilitě):
+
+```tmux
+set -s escape-time 10         # server option (jedna na celý server)
+set detach-on-destroy off     # session option (bez přepínače)
+set -w mode-keys vi           # window option — platí pro okno a jeho panes (= setw)
+set -p allow-passthrough on   # pane option
+```
+
+Žádné `sets` ani `setp` neexistují — server a pane options se zapisují
+přepínačem. A pozor na falešné kamarády: `setb` (= `set-buffer`) plní
+paste buffery a `setenv` (= `set-environment`) proměnné prostředí,
+s options nemají nic společného.
+
+tmux si navíc umí druh volby odvodit ze jména (pane options odvodí jako
+window), takže i holé `set mode-keys vi` funguje — `setw` v konfiguracích
+přežívá ze zvyku a v tomhle taháku pro srozumitelnost: je z něj na první
+pohled vidět, že volba patří oknu.
+
+K tomu dědění: pane dědí z window options, ty z globálních window options,
+session z globálních session options. Právě globální úroveň nastavuje `-g`
+— proto je v `~/.tmux.conf` skoro u všeho: bez `-g` by volba platila jen
+pro aktuální session nebo okno, a žádné takové při načítání konfigurace
+neexistuje. Čtení: `show -g`, `show -gw`, `show -s` (`show` =
+`show-options`).
 
 ### Zkratky bez prefixu (`bind -n`)
 
