@@ -5,6 +5,7 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 ## Obsah
 
 - [Na co je to dobré](#na-co-je-to-dobré)
+- [Jak o tmuxu přemýšlet](#jak-o-tmuxu-přemýšlet)
 - [Slovníček pojmů](#slovníček-pojmů)
 - [Jak se čtou zkratky](#jak-se-čtou-zkratky)
 - [Méně známé triky](#méně-známé-triky)
@@ -74,6 +75,62 @@ Zbytek jsou věci, které dostaneš, když už ho máš:
 Vedlejší efekt: čím víc věcí žije v tmuxu, tím míň záleží na tom, jaký
 terminálový emulátor zrovna používáš — zkratky, splity i sessions si neseš
 s sebou.
+
+---
+
+## Jak o tmuxu přemýšlet
+
+Pár principů, ze kterých plyne skoro všechno ostatní v tomhle taháku. Pojmy
+samotné vysvětluje [Slovníček](#slovníček-pojmů) — tady jde o to, co z nich
+vyplývá; šipka vede na sekci s podrobnostmi.
+
+- **Terminál je jen okno.** Programy neběží v tvém terminálu, ale v tmux
+  serveru na pozadí. Terminál je klient, který se na server dívá — proto
+  detach nic nezabije, pád SSH nic neztratí a je jedno, ze kterého zařízení
+  se zrovna díváš. → [Slovníček](#slovníček-pojmů)
+- **Všechno má místo v hierarchii.** `server → session → window → pane`:
+  session je pracovní kontext (typicky projekt), window je tab, pane je výřez
+  okna s vlastním terminálem. Kdo tohle má srovnané, přestane zakládat deset
+  sessions tam, kde chtěl deset oken. → [Slovníček](#slovníček-pojmů)
+- **Prefix přepíná adresáta kláves.** Klávesnice je jedna a stisky normálně
+  tečou do programu v panu; prefix říká „tahle klávesa patří tmuxu“.
+  Obecněji: každá zkratka žije v nějaké key table — `root` (bez prefixu),
+  `prefix`, `copy-mode`. → [Slovníček](#slovníček-pojmů),
+  [Zkratky bez prefixu](#zkratky-bez-prefixu-bind--n)
+- **Historii drží tmux, ne terminál.** Každý pane je vlastní terminál se
+  svým scrollbackem; vnější terminál vidí jen aktuální obraz. Proto se
+  v historii scrolluje a hledá přes copy mode, ne scrollbackem terminálu.
+  → [Copy mode a schránka](#copy-mode-a-schránka)
+- **Všechno je tmux příkaz.** Zkratka volá příkaz, `~/.tmux.conf` je jen
+  seznam příkazů provedených při startu serveru a tentýž příkaz jde zadat
+  přes `prefix :` i ze shellu jako `tmux …`. Jedno rozhraní, tři vstupní
+  kanály — co uděláš interaktivně, umíš i naskriptovat.
+  → [Jak se čtou zkratky](#jak-se-čtou-zkratky), [Konfigurace](#konfigurace)
+- **Každý objekt má adresu.** Cíl `-t` ve tvaru `session:window.pane` míří
+  na kterýkoli pane na serveru — proto jde odkudkoli poslat vstup, přečíst
+  obrazovku nebo restartovat proces, nejen v panu, kde zrovna stojíš.
+  → [Automatizace a skriptování](#automatizace-a-skriptování)
+- **Na cokoli se jde zeptat.** Celý stav serveru je čitelný přes formátové
+  proměnné `#{…}` — tentýž mechanismus pohání status bar, výpisy s `-F`
+  i skripty (`tmux display -p '#{pane_current_path}'`). → [Výpisy](#výpisy)
+- **tmux je překladač uprostřed.** Dovnitř se programům tváří jako terminál,
+  navenek je sám terminálová aplikace kreslící do toho tvého. Barvy,
+  speciální klávesy, schránka i notifikace musí projít oběma stranami
+  překladu — odtud celá rodina voleb `terminal-features`, `escape-time`,
+  `extended-keys`, `allow-passthrough`.
+  → [tmux je uprostřed](#tmux-je-uprostřed)
+- **Options mají dědičnost.** Pane dědí z window options, window
+  z globálních window options, session z globálních session options — proto
+  je v configu skoro všude `-g` a proto „nefungující“ volbu obvykle přebíjí
+  lokální hodnota. → [`set` vs `setw`](#set-vs-setw-a-druhy-options)
+- **Prostředí se dědí v čase, ne živě.** Proměnné prostředí se zachytí při
+  vzniku serveru a session; nový pane dědí prostředí session, ne tvého
+  aktuálního shellu. Proto po novém přihlášení „nefunguje“ ve starých panes
+  SSH agent.
+  → [SSH agent, který přežije reattach](#ssh-agent-který-přežije-reattach)
+- **Server nepřežije reboot.** tmux chrání před ztrátou *spojení*, ne
+  stroje — sessions žijí jen v paměti serveru. Na přežití rebootu je
+  [tmux-resurrect](#nejpoužívanější-pluginy).
 
 ---
 
@@ -231,9 +288,13 @@ window options mají historickou zkratku `setw`. Podrobně v
 - `Ctrl-b c` = totéž
 - `tmux ls` = příkaz do shellu (mimo tmux i uvnitř)
 - `:new-window` = tmux příkaz zadaný přes `prefix :`
+- `-t prace:0.1` = cíl příkazu: session `prace`, její okno `0`, jeho pane `1`
 
 Skoro každá zkratka má svůj příkazový ekvivalent — zkratka `prefix c` volá
-příkaz `new-window`.
+příkaz `new-window`. A skoro každý příkaz bere cíl `-t` ve tvaru
+`session:window.pane`; části zprava jde vynechat (`-t prace` = aktivní okno
+té session). Právě přes `-t` jde řídit kterýkoli pane na serveru, nejen ten,
+ve kterém zrovna stojíš.
 
 ---
 
@@ -943,6 +1004,12 @@ bez něj.
 
 ## Copy mode a schránka
 
+Historii výstupu drží tmux, ne vnější terminál — každý pane je vlastní
+terminál s vlastním scrollbackem a ven jde jen aktuální obraz obrazovky.
+Proto nativní scrollback terminálu v tmuxu ukazuje nesmysly a v historii se
+scrolluje, hledá a kopíruje přes copy mode (se `set -g mouse on` i kolečkem
+myši).
+
 | Zkratka | Co dělá |
 | --- | --- |
 | `prefix [` | Vstup do copy mode |
@@ -1010,7 +1077,8 @@ bind -T copy-mode-vi y send -X copy-pipe-and-cancel "pbcopy"
 
 Alternativně `set -g set-clipboard on` — tmux pak posílá výběr do schránky přes
 escape sekvenci OSC 52, což funguje i přes SSH, ale terminál to musí podporovat
-a mít povolené.
+a mít povolené (schránka musí projít oběma stranami překladu, viz
+[tmux je uprostřed](#tmux-je-uprostřed)).
 
 ---
 
@@ -1038,8 +1106,8 @@ tmux new -s prace 'htop'          # session rovnou spustí příkaz
 tmux send-keys -t prace:0.1 'make test' Enter
 ```
 
-Cíl (`-t`) se zapisuje jako `session:window.pane`, např. `prace:0.1`. Části se
-dají vynechat — `-t prace` = aktivní okno té session.
+Cíl (`-t`) se zapisuje jako `session:window.pane`, např. `prace:0.1` — viz
+[Jak se čtou zkratky](#jak-se-čtou-zkratky).
 
 ---
 
@@ -1128,6 +1196,35 @@ Pár detailů, které v tom zápisu nejsou samozřejmé:
   naposledy aktivní session, místo aby tě vyhodil na plochu. Ohleduplnější
   hodnota `no-detached` přepíná jen do sessions, ke kterým nikdo připojený
   není — a když taková není, normálně tě odpojí.
+
+### tmux je uprostřed
+
+Několik voleb výše (`escape-time`, `default-terminal`, `terminal-features`)
+i celé [nastavení pro Claude Code](#tmux-a-claude-code) níže spojuje jeden
+model: tmux je **překladač mezi dvěma terminály**. Programům uvnitř se tváří
+jako terminál — proto je v panech `TERM=tmux-256color` a všechno, co program
+vypíše, tmux nejdřív sám interpretuje. Navenek je obyčejná terminálová
+aplikace, která kreslí do tvého skutečného terminálu. Každá schopnost proto
+musí projít oběma stranami překladu:
+
+- **Barvy.** `default-terminal` říká programům uvnitř, co umí tmux;
+  `terminal-features ",*:RGB"` říká tmuxu, co umí vnější terminál. Když
+  chybí jedno nebo druhé, barvy „v tmuxu nefungují“, mimo něj ano.
+- **Klávesy.** Stisk Escape a začátek escape sekvence (šipky, F-klávesy, …)
+  vypadají na vstupu stejně — `escape-time` je doba, po kterou tmux čeká,
+  jestli nedorazí zbytek sekvence. `extended-keys` zase propouští rozlišení
+  kombinací jako Shift+Enter, které klasické sekvence nerozeznají
+  (viz [tmux a Claude Code](#tmux-a-claude-code)).
+- **Schránka.** OSC 52 (`set-clipboard`) doputuje do systémové schránky,
+  jen když ji podporuje a povoluje i vnější terminál — viz
+  [Copy mode a schránka](#copy-mode-a-schránka).
+- **Cizí escape sekvence.** Co tmux nezná, spolkne; `allow-passthrough` je
+  propustka pro programy, které potřebují mluvit přímo s vnějším terminálem
+  (notifikace, obrázky, progress bar — viz
+  [tmux a Claude Code](#tmux-a-claude-code)).
+
+Univerzální diagnostika: když něco funguje mimo tmux a uvnitř ne, skoro
+vždycky chybí jedna strana překladu.
 
 ### `set` vs `setw` a druhy options
 
@@ -1372,8 +1469,8 @@ Co která řádka řeší:
 | `extended-keys` + `terminal-features` | tmux nerozliší Shift+Enter od Enter, takže Shift+Enter místo nového řádku odešle prompt |
 | `mouse on` | kolečko myši scrolluje tmux místo Claude Code |
 
-Platí i tehdy, když tvůj terminál Shift+Enter sám o sobě umí — tmux je uprostřed
-a musí ho umět propustit.
+Platí i tehdy, když tvůj terminál Shift+Enter sám o sobě umí — tmux je
+[uprostřed](#tmux-je-uprostřed) a musí ho umět propustit.
 
 ### `/terminal-setup` pouštěj mimo tmux
 
