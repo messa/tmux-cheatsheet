@@ -1024,6 +1024,9 @@ set -g base-index 1
 setw -g pane-base-index 1
 set -g renumber-windows on
 
+# Po zabití session přeskočit do jiné, místo vyhození z tmuxu
+set -g detach-on-destroy off
+
 # Delší historie
 set -g history-limit 50000
 
@@ -1075,6 +1078,11 @@ Pár detailů, které v tom zápisu nejsou samozřejmé:
   (`set -as`); `-g` u ní tmux bere taky, proto ve světě potkáš obojí.
 - `#{pane_current_path}` v bindingu se vyhodnotí až při stisku zkratky, ne při
   načtení konfigurace.
+- `detach-on-destroy off` oceníš, když sessions často zabíjíš a zakládáš
+  (typicky se sessionizer skriptem): po `kill-session` tě tmux přepne do
+  naposledy aktivní session, místo aby tě vyhodil na plochu. Ohleduplnější
+  hodnota `no-detached` přepíná jen do sessions, ke kterým nikdo připojený
+  není — a když taková není, normálně tě odpojí.
 
 ### Zkratky bez prefixu (`bind -n`)
 
