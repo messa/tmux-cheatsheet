@@ -311,13 +311,15 @@ až build skončí“ je `monitor-silence` chytřejší — zajímá tě, kdy v�
 
 ```bash
 tmux -L agenti new -d -s x    # oddělený server s vlastním socketem
-tmux -L agenti ls             # …vlastní sessions, vlastní konfigurace
+tmux -L agenti ls             # …vlastní sessions, vlastní stav options
 ```
 
 Server je vázaný na socket; `-L jmeno` založí další socket (a tedy server)
 vedle defaultního. Izolovaný svět — `kill-server` v něm nesáhne na tvoje
 běžné sessions. Hodí se na experimenty nebo pro automatizaci, která si nemá
-špinit tvůj pracovní server.
+špinit tvůj pracovní server. Konfigurační soubory ovšem nový server čte
+tytéž (`/etc/tmux.conf` i `~/.tmux.conf`, viz [Konfigurace](#konfigurace));
+opravdu čistý server s defaulty dostaneš až přes `tmux -f /dev/null -L …`.
 
 `-S /cesta/k/socketu` určí socket plnou cestou — tudy vede i sdílení tmuxu
 mezi dvěma OS uživateli (socket na společně přístupném místě + práva, typicky
@@ -702,14 +704,18 @@ interaktivní práce.
 ### Vlastní server a deterministická velikost
 
 ```bash
-tmux -L ci new-session -d -s app -x 200 -y 50 -c ~/projekt
+tmux -L ci -f /dev/null new-session -d -s app -x 200 -y 50 -c ~/projekt
 # …práce…
 tmux -L ci kill-server
 ```
 
 `-L jmeno` znamená vlastní socket, a tedy vlastní server: vlastní sessions,
-vlastní konfigurace a `kill-server`, který nesáhne na tvůj denní tmux. Pro
-skripty je to skoro vždycky správná volba.
+vlastní stav options a `kill-server`, který nesáhne na tvůj denní tmux. Pro
+skripty je to skoro vždycky správná volba. `-f /dev/null` k tomu vypne
+načítání konfiguračních souborů (stačí u příkazu, který server startuje) —
+jinak i oddělený server načte tvůj `~/.tmux.conf` a skript pak závisí na
+tom, co v něm zrovna je: třeba s `base-index 1` míří všechny cíle `app:0.…`
+do prázdna.
 
 Kromě izolace to řeší velikost okna. Na sdíleném serveru platí
 `window-size latest`, takže okno dostane velikost naposledy použitého klienta
@@ -1038,7 +1044,18 @@ dají vynechat — `-t prace` = aktivní okno té session.
 
 ## Konfigurace
 
-Konfigurace je v `~/.tmux.conf` (nebo `~/.config/tmux/tmux.conf`).
+Konfigurace je v `~/.tmux.conf` (nebo `~/.config/tmux/tmux.conf`). Před ní
+tmux načte i systémový `/etc/tmux.conf`, pokud existuje — cesta je daná při
+kompilaci a distribuce ho typicky nedodávají, takže se s ním potkáš spíš na
+sdílených serverech, kde ho správce použil na defaulty pro všechny účty.
+
+Obojí se čte **jednou, při startu serveru**. Konfigurace je jen posloupnost
+tmux příkazů, které se v tu chvíli provedou — nový attach ani nová session
+ji znovu nenačtou, od toho je reload níže. Chyby tmux vypíše v první
+session a pokračuje dalším řádkem. Vlastní soubor místo těch výchozích
+vnutí `tmux -f soubor`; krajní případ `tmux -f /dev/null` spustí server
+s čistými defaulty.
+
 Rozumný základ:
 
 ```tmux
@@ -1142,6 +1159,23 @@ session z globálních session options. Právě globální úroveň nastavuje `-
 pro aktuální session nebo okno, a žádné takové při načítání konfigurace
 neexistuje. Čtení: `show -g`, `show -gw`, `show -s` (`show` =
 `show-options`).
+
+### Jeden config na víc strojů (`%if`)
+
+Konfigurák se dá větvit — bloky `%if` / `%elif` / `%else` / `%endif`
+vyhodnotí tmux při načítání souboru:
+
+```tmux
+%if "#{==:#{host_short},devvm}"
+set -g status-style "bg=colour52,fg=colour250"   # na dev VM červený status bar
+%endif
+```
+
+Typické použití: jedny dotfiles všude a status bar obarvený podle stroje,
+ať na první pohled poznáš produkci od notebooku. Podmínka je obyčejný
+formát (viz [Vlastní formát](#vlastní-formát--f)), takže větvit jde podle
+hostname, verze tmuxu (`#{version}`) nebo čehokoli dalšího
+z `display-message -a`.
 
 ### Zkratky bez prefixu (`bind -n`)
 
