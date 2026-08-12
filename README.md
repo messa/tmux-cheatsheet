@@ -1,6 +1,18 @@
 # tmux cheatsheet
 
-Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
+Terminál — to černé okno, do kterého se píšou příkazy — má jednu zradu:
+když ho zavřeš, skončí i všechno, co v něm běželo.
+[tmux](https://github.com/tmux/tmux) to řeší prostředníkem: programy neběží
+přímo ve tvém okně, ale uvnitř tmuxu, a terminál se na ně jen dívá. Zavřeš
+okno, spadne ti SSH — práce běží dál; příště se připojíš, klidně z jiného
+počítače, a pokračuješ přesně tam, kde jsi skončil. Navrch
+dostaneš záložky jako v prohlížeči a rozdělení obrazovky na víc terminálů
+vedle sebe.
+
+Tohle jsou poznámky a tahák, psáno pro tmux 3.x. Číst se dá na přeskáčku;
+když s tmuxem začínáš, začni sekcemi
+[Na co je to dobré](#na-co-je-to-dobré)
+a [Slovníček pojmů](#slovníček-pojmů).
 
 ## Obsah
 
