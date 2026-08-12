@@ -18,6 +18,7 @@ Poznámky a tahák k tmuxu (psáno pro tmux 3.x).
 - [Konfigurace](#konfigurace)
 - [tmux a Claude Code](#tmux-a-claude-code)
 - [Pluginy](#pluginy)
+- [Historie a verze](#historie-a-verze)
 - [Alternativy a příbuzné nástroje](#alternativy-a-příbuzné-nástroje)
 
 ---
@@ -1520,6 +1521,80 @@ nainstalovat jediný plugin, je to tenhle.
 
 Obvyklá rada: začni bez pluginů a sáhni po TPM, až budeš chtít resurrect nebo
 thumbs.
+
+---
+
+## Historie a verze
+
+### Odkud se vzal
+
+tmux napsal **Nicholas Marriott**, vývojář OpenBSD; první commit je z léta
+2007, první veřejná verze z listopadu 2007. Není to fork screenu, ale nový
+kód psaný s cílem udělat BSD-licencovanou (konkrétně ISC) alternativu GNU
+screenu s čistší architekturou — hlavní designové rozhodnutí je
+[jeden server na všechny sessions](#slovníček-pojmů), ze kterého plyne
+většina věcí, které tmux umí a screen ne. V červenci 2009 ho OpenBSD přijalo
+do base systému (poprvé vyšel s OpenBSD 4.6; k tomu citát Thea de Raadta
+v [sekci o screenu](#gnu-screen)) a v září 2009 vyšla verze 1.0.
+
+### Styl vývoje a komunita
+
+- **Domovem kódu je OpenBSD** — tmux se vyvíjí přímo v jeho CVS jako součást
+  base systému. [GitHub repo](https://github.com/tmux/tmux) je „portable“
+  verze: synchronizuje se z OpenBSD a přidává vrstvu přenositelnosti
+  (libevent, ncurses, autotools).
+- **Prakticky one-man projekt.** Z ~12 000 commitů jich přes 8 400 napsal
+  Marriott sám; druhý v pořadí Thomas Adam se stará hlavně o portable větev
+  a synchronizaci. Odtud i konzervativní styl: [žádné plugin API](#pluginy),
+  funkce se do jádra přijímají pomalu a dokumentace je jedna důkladná man
+  stránka (plus [wiki](https://github.com/tmux/tmux/wiki) na GitHubu).
+- **Komunita** žije na GitHubu (issues) a v mailing listu
+  `tmux-users@googlegroups.com`; ekosystém [pluginů](#pluginy) kolem TPM je
+  čistě komunitní nadstavba mimo jádro.
+- **Nová verze vychází zhruba jednou ročně**; písmenkové verze (3.5a, 3.6b, …)
+  jsou opravné. Pozor při čtení dat z GitHubu: tag často vzniká měsíce před
+  oznámením verze (3.0 je otagovaná v červnu 2019, vyšla v listopadu).
+
+### Hlavní verze
+
+| Verze | Vydání | Nejdůležitější novinky |
+| --- | --- | --- |
+| 0.1 | listopad 2007 | První veřejné vydání (tehdy na SourceForge) |
+| 1.0 | září 2009 | První „kulatá“ verze, krátce po importu do OpenBSD |
+| 1.8 | březen 2013 | Zoom panu (`prefix z`) |
+| 2.1 | říjen 2015 | Přepsaná myš — místo čtyř voleb jediná `mouse on` |
+| 2.2 | duben 2016 | True color (24bit RGB) |
+| 2.4 | duben 2017 | Přepsaný copy mode: tabulky `copy-mode(-vi)`, příkazy `send -X` |
+| 3.0 | listopad 2019 | Nová syntaxe konfigurace (`{}` bloky) |
+| 3.1 | duben 2020 | Regex hledání v copy mode; default `window-size latest` — konec poučky „řídí se nejmenším klientem“ |
+| 3.2 | duben 2021 | [Popupy](#popup-plovoucí-okno-nad-layoutem) (`display-popup`), customize mode (`prefix C`), env proměnné přes `-e` |
+| 3.3 | červen 2022 | `allow-passthrough`; `server-access` — sdílení serveru mezi OS uživateli bez setuid |
+| 3.4 | únor 2024 | [OSC 8 hyperlinky](#copy-mode-a-schránka); obrázky sixel (jen se sestavením `--enable-sixel`) |
+| 3.5 | září 2024 | Přepracované extended keys (Shift+Enter a spol.), `search_count`, zrcadlené main-* layouty |
+| 3.6 | listopad 2025 | Scrollbary u panes (`pane-scrollbars`), hlášení světlého/tmavého tématu terminálu |
+| 3.7 | červen 2026 | Floating panes (zatím jen základ), synchronized output — méně blikání např. pro [Claude Code](#fullscreen-rendering) |
+
+Úplný seznam změn je v souboru
+[CHANGES](https://github.com/tmux/tmux/blob/master/CHANGES);
+datované tarbally jsou na [GitHub releases](https://github.com/tmux/tmux/releases).
+
+### Kterou verzi máš a kterou dostaneš
+
+Vlastní verzi řekne `tmux -V`. Nejnovější upstream je **3.7b**
+(červenec 2026); v balíčcích aktuálních distribucí:
+
+| Distribuce | tmux |
+| --- | --- |
+| Debian 13 „trixie“ (stable) | 3.5a |
+| Debian 12 „bookworm“ (oldstable) | 3.3a |
+| Ubuntu 26.04 LTS „Resolute Raccoon“ | 3.6a |
+| Ubuntu 24.04 LTS „Noble Numbat“ | 3.4 |
+
+Pro tenhle tahák to znamená: na aktuálním stable Debianu i Ubuntu funguje
+všechno (nejnovější zmiňované featury, `search_count`
+a `copy_cursor_hyperlink`, jsou z 3.5 — bookworm a noble na ně ještě nemají).
+Výjimka je synchronized output pro [Claude Code](#fullscreen-rendering) — ten
+má až 3.7, která v době psaní (srpen 2026) v žádné z distribucí není.
 
 ---
 
