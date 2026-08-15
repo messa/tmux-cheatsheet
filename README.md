@@ -24,9 +24,9 @@ a [Slovníček pojmů](#slovníček-pojmů).
 - [Sessions](#sessions)
 - [Windows](#windows)
 - [Panes](#panes)
+- [Copy mode a schránka](#copy-mode-a-schránka)
 - [Výpisy](#výpisy)
 - [Automatizace a skriptování](#automatizace-a-skriptování)
-- [Copy mode a schránka](#copy-mode-a-schránka)
 - [Ostatní užitečné](#ostatní-užitečné)
 - [Konfigurace](#konfigurace)
 - [tmux a Claude Code](#tmux-a-claude-code)
@@ -205,9 +205,12 @@ socket komunikuje i SSH agent, viz
 
 ### client
 
-Tvůj terminál připojený k serveru. K jedné session může být připojeno víc klientů
-najednou (typicky když sdílíš session s kolegou nebo ji máš otevřenou na dvou
-monitorech).
+Tvůj terminál připojený k serveru. K jedné session může být připojeno víc
+klientů najednou — kolega při párovém programování, druhý monitor, nebo tatáž
+session z počítače v kanceláři, doma i z mobilu či tabletu (viz
+[Na co je to dobré](#na-co-je-to-dobré)). Klienti na stejné session sdílí
+aktivní okno; když má mít každý svoje, řeší to
+[grouped sessions](#víc-klientů-každý-na-jiném-okně-grouped-sessions).
 
 ### session
 
@@ -564,6 +567,50 @@ Session je nejvyšší úroveň skupiny — jedna "pracovní plocha". Obsahuje j
 | `:new-session -s jmeno` | Nová session bez opuštění tmuxu |
 | `:kill-session` | Zabije aktuální session |
 
+### Sessionizer
+
+Session na projekt se rychle omrzí zakládat ručně. „Sessionizer“ je skript,
+který nechá projekt vybrat (typicky přes
+[fzf](https://github.com/junegunn/fzf)) a skočí do session pojmenované po
+něm — a když ještě neexistuje, nejdřív ji založí:
+
+```bash
+#!/usr/bin/env bash
+# ~/bin/tmux-sessionizer
+dir=$(find ~/code -mindepth 1 -maxdepth 1 -type d | fzf) || exit 0
+name=$(basename "$dir" | tr . _)
+
+tmux has-session -t "=$name" 2>/dev/null ||
+  tmux new-session -d -s "$name" -c "$dir"
+
+if [ -n "$TMUX" ]; then
+  tmux switch-client -t "=$name"
+else
+  tmux attach -t "=$name"
+fi
+```
+
+Drobnosti, na kterých to stojí:
+
+- **`=` vynucuje přesnou shodu jména.** Bez něj bere `-t` jméno jako prefix:
+  `-t web` klidně trefí session `webapp`.
+- **Tečky se mění na podtržítka.** Tečka a dvojtečka mají v cílích
+  (`session:window.pane`) speciální význam, takže je tmux v názvu session
+  sám potichu přepíše na `_` — kdyby si je skript nepřevedl taky, hledal by
+  `switch-client` jméno, které nikdy nevzniklo.
+- **Uvnitř tmuxu se přepíná přes `switch-client`** — `attach` by vnořil tmux
+  do tmuxu.
+
+Ze shellu skript spouštíš přímo, zevnitř tmuxu si ho pověs na klávesu do
+[popupu](#popup-plovoucí-okno-nad-layoutem):
+
+```tmux
+bind f display-popup -E tmux-sessionizer
+```
+
+K tomuhle workflow patří `detach-on-destroy off`, ať tě `kill-session`
+nevyhodí z tmuxu úplně — viz [Konfigurace](#konfigurace).
+
 ### Víc klientů, každý na jiném okně (grouped sessions)
 
 Když se dva klienti připojí ke **stejné** session, jsou zrcadlem — sdílí current
@@ -603,7 +650,7 @@ samostatné session ručně přes `:link-window -t jina-session`.
 > ```tmux
 > set -g window-size smallest    # vždy podle nejmenšího klienta (staré chování)
 > set -g window-size largest     # vždy podle největšího; menší klient vidí jen výřez
-> setw -g aggressive-resize on   # smallest/largest počítat jen z klientů, které okno OPRAVDU zobrazují
+> setw -g aggressive-resize on   # smallest/largest počítat jen z klientů, které mají okno právě na obrazovce (ne jen v session)
 > ```
 >
 > Na `latest` nemá `aggressive-resize` vliv. A klient, který velikost nemá
@@ -703,6 +750,161 @@ označíš ho `prefix m`, přepneš se kam chceš a dáš `:join-pane`.
 :resize-pane -Z              # zoom (totéž co prefix z)
 :select-layout tiled
 ```
+
+---
+
+## Copy mode a schránka
+
+Historii výstupu drží tmux, ne vnější terminál — každý pane je vlastní
+terminál s vlastním scrollbackem a ven jde jen aktuální obraz obrazovky.
+Proto nativní scrollback terminálu v tmuxu ukazuje nesmysly a v historii se
+scrolluje, hledá a kopíruje přes copy mode (a [myš](#myš)). Kolik řádků
+historie tmux drží, určuje `history-limit` (viz [Konfigurace](#konfigurace))
+— platí pro panes vzniklé po jeho nastavení.
+
+| Zkratka | Co dělá |
+| --- | --- |
+| `prefix [` | Vstup do copy mode |
+| `q` | Konec copy mode |
+| šipky / `PgUp` / `PgDn` | Pohyb v historii |
+| `prefix ]` | Vloží obsah tmux bufferu |
+| `prefix =` | Seznam bufferů, výběr co vložit |
+
+Copy mode má dvě sady kláves a default je **emacs** — vi dostaneš
+automaticky jen tehdy, když proměnná `VISUAL` nebo `EDITOR` obsahuje „vi“.
+Když ti tabulka níže „nefunguje“ (hledání je `C-s`/`C-r` místo `/`, kopíruje
+se `C-Space` a `M-w`), jsi v emacs módu; ověří to `tmux show -gw mode-keys`.
+Zbytek sekce předpokládá vi klávesy:
+
+```tmux
+setw -g mode-keys vi
+```
+
+| Klávesa | Co dělá |
+| --- | --- |
+| `Space` | Začátek výběru |
+| `Enter` | Zkopíruje výběr a ukončí copy mode |
+| `V` | Vybere celý řádek |
+| `C-v` | Přepne obdélníkový (sloupcový) výběr |
+| `/` | Hledá vpřed |
+| `?` | Hledá zpět |
+| `n` / `N` | Další / předchozí výsledek |
+| `w` / `b` / `e` | Slovo vpřed / zpět / na konec slova |
+| `0` / `$` | Začátek / konec řádku |
+| `C-u` / `C-d` | Půl obrazovky nahoru / dolů |
+| `g` / `G` | Začátek / konec historie |
+| `H` / `M` / `L` | Horní / prostřední / dolní řádek obrazovky |
+
+Vimové `v` a `y` v defaultu překvapí: `v` nezačíná výběr, ale přepíná
+obdélník (totéž co `C-v`), a `y` není nabindované vůbec. Obojí dorovnávají
+dva bindingy v [Do systémové schránky](#do-systémové-schránky) — a o
+obdélník přemapováním `v` nepřijdeš, `C-v` zůstává.
+
+### Myš
+
+Se `set -g mouse on` (je v [doporučené konfiguraci](#konfigurace)) obsluhuje
+historii i myš, bez jediného vlastního bindingu:
+
+- **Kolečko** nahoru samo vstoupí do copy mode a scrolluje (po 5 řádcích);
+  doscrollováním zpátky dolů copy mode zase skončí.
+- **Tažení** vybírá; puštěním tlačítka se výběr zkopíruje a copy mode
+  skončí.
+- **Dvojklik / trojklik** zkopíruje slovo / řádek pod kurzorem.
+- **Shift + tažení** jde mimo tmux: terminál událost tmuxu vůbec nepředá
+  a udělá svůj nativní výběr (v iTerm2 s `Option`, v Terminal.app s `Fn`).
+
+Kopírování myší jde přes tytéž cesty jako klávesy — výběr skončí v tmux
+bufferu a s nastaveným `copy-command` i v systémové schránce (viz
+[Do systémové schránky](#do-systémové-schránky)).
+
+### Novinky posledních verzí
+
+Tři schopnosti, které starší návody neznají (minimální verze tmuxu
+v závorkách):
+
+- **Stav hledání je ve formátech.** `#{search_present}` (od 3.2) říká,
+  jestli se vůbec hledá; `#{search_count}` (od 3.5) počet shod
+  (`#{search_count_partial}` = 1, dokud tmux ještě dopočítává). Hlavně pro
+  skripty — `display -p` v copy mode je přečte.
+- **OSC 8 hyperlinky** (od 3.4). Escape sekvence, kterou program k vypsanému
+  textu přibalí neviditelné URL — obdoba `<a href>` z HTML pro terminál: na
+  obrazovce je jméno souboru, kliknutím (typicky Ctrl+klik) se otevře cíl.
+  Vypisuje je třeba `ls --hyperlink` nebo gcc v chybových hláškách; tmux si
+  je ukládá a dává formátům: `#{mouse_hyperlink}` je cíl odkazu pod myší,
+  `#{copy_cursor_hyperlink}` (od 3.5) pod kurzorem v copy mode. Otevírání
+  jednou klávesou:
+
+  ```tmux
+  bind -T copy-mode-vi O if -F '#{copy_cursor_hyperlink}' 'run-shell -b "xdg-open \"#{copy_cursor_hyperlink}\""'
+  ```
+
+  (Velké `O` — malé `o` má v copy-mode-vi default, skok na druhý konec
+  výběru. A `if -F` zajistí, že stisk mimo odkaz neudělá nic, místo chyby
+  z `xdg-open ""`.)
+
+  Interně to funguje vždy; aby odkazy byly klikací i ve vnějším terminálu,
+  musí mít featuru `hyperlinks` — tmux ji u známých terminálů pozná sám,
+  vynutí se přes `set -ga terminal-features ",*:hyperlinks"` (k zápisu viz
+  [Konfigurace](#konfigurace)).
+
+- **Skoky po promptech** (od 3.4). `send -X next-prompt` / `previous-prompt`
+  skáčou historií z promptu na prompt — místo scrollování „o obrazovku výš
+  a hledat, kde příkaz začal“. Chce to shell integraci: shell musí prompty
+  značkovat sekvencí OSC 133 (`\033]133;A\033\\` v `PS1`), jinak klávesy
+  neudělají nic. Volba `-o` skočí místo promptu na začátek výstupu příkazu.
+  Defaultní binding není:
+
+  ```tmux
+  bind -T copy-mode-vi K send -X previous-prompt
+  bind -T copy-mode-vi J send -X next-prompt
+  ```
+
+### Do systémové schránky
+
+tmux má vlastní buffery oddělené od schránky systému — kopírování v copy
+mode plní je, ne schránku. Do schránky vedou dvě cesty.
+
+**`copy-command`** (od 3.2): všechny defaultní kopírovací akce (`Enter`,
+`M-w`, puštění myši, dvojklik, …) jsou interně `copy-pipe` a bez argumentu
+pošlou výběr do příkazu z téhle volby. Jeden řádek podle systému — a k tomu
+dorovnání vimového `v`/`y` z tabulky výše:
+
+```tmux
+set -s copy-command 'wl-copy'                        # Wayland
+# set -s copy-command 'xclip -selection clipboard'   # X11
+# set -s copy-command 'pbcopy'                       # macOS
+
+bind -T copy-mode-vi v send -X begin-selection
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel  # bez argumentu → copy-command
+```
+
+(Starší návody místo `copy-command` dávají příkaz přímo do bindingu —
+`… copy-pipe-and-cancel "xclip -selection clipboard"`. Funguje to taky, ale
+platí to jen pro tu jednu klávesu; myš a emacs klávesy schránku neplní.)
+
+**OSC 52** (volba `set-clipboard`): tmux pošle výběr do schránky escape
+sekvencí přes vnější terminál, takže funguje i přes SSH bez `xclip` na
+serveru. Default `external` to zkouší sám od sebe — pokud vnější terminál
+OSC 52 podporuje a má povolenou (schránka musí projít oběma stranami
+překladu, viz [tmux je uprostřed](#tmux-je-uprostřed)), možná ti schránka
+funguje i bez `copy-command`. Hodnota `on` navíc totéž dovolí programům
+běžícím uvnitř panes.
+
+### Buffery ze shellu
+
+Buffer není jen mezipaměť pro `prefix ]` — jde k němu ze skriptů, takže
+copy mode má most do [Automatizace](#automatizace-a-skriptování):
+
+```bash
+tmux save-buffer -                # vypíše nejnovější buffer na stdout
+tmux set-buffer 'text'            # naplní buffer zvenčí
+tmux paste-buffer -t prace:0.1    # vloží buffer do konkrétního panu
+tmux list-buffers                 # bufferů je celý stack, tohle je výpis
+```
+
+A opačným směrem: `capture-pane` bez `-p` uloží obrazovku právě do bufferu
+(viz [Přečíst výstup](#přečíst-výstup)) — buffer je společný meziprostor
+copy mode, myši i skriptů.
 
 ---
 
@@ -1019,161 +1221,6 @@ bez něj.
 
 ---
 
-## Copy mode a schránka
-
-Historii výstupu drží tmux, ne vnější terminál — každý pane je vlastní
-terminál s vlastním scrollbackem a ven jde jen aktuální obraz obrazovky.
-Proto nativní scrollback terminálu v tmuxu ukazuje nesmysly a v historii se
-scrolluje, hledá a kopíruje přes copy mode (a [myš](#myš)). Kolik řádků
-historie tmux drží, určuje `history-limit` (viz [Konfigurace](#konfigurace))
-— platí pro panes vzniklé po jeho nastavení.
-
-| Zkratka | Co dělá |
-| --- | --- |
-| `prefix [` | Vstup do copy mode |
-| `q` | Konec copy mode |
-| šipky / `PgUp` / `PgDn` | Pohyb v historii |
-| `prefix ]` | Vloží obsah tmux bufferu |
-| `prefix =` | Seznam bufferů, výběr co vložit |
-
-Copy mode má dvě sady kláves a default je **emacs** — vi dostaneš
-automaticky jen tehdy, když proměnná `VISUAL` nebo `EDITOR` obsahuje „vi“.
-Když ti tabulka níže „nefunguje“ (hledání je `C-s`/`C-r` místo `/`, kopíruje
-se `C-Space` a `M-w`), jsi v emacs módu; ověří to `tmux show -gw mode-keys`.
-Zbytek sekce předpokládá vi klávesy:
-
-```tmux
-setw -g mode-keys vi
-```
-
-| Klávesa | Co dělá |
-| --- | --- |
-| `Space` | Začátek výběru |
-| `Enter` | Zkopíruje výběr a ukončí copy mode |
-| `V` | Vybere celý řádek |
-| `C-v` | Přepne obdélníkový (sloupcový) výběr |
-| `/` | Hledá vpřed |
-| `?` | Hledá zpět |
-| `n` / `N` | Další / předchozí výsledek |
-| `w` / `b` / `e` | Slovo vpřed / zpět / na konec slova |
-| `0` / `$` | Začátek / konec řádku |
-| `C-u` / `C-d` | Půl obrazovky nahoru / dolů |
-| `g` / `G` | Začátek / konec historie |
-| `H` / `M` / `L` | Horní / prostřední / dolní řádek obrazovky |
-
-Vimové `v` a `y` v defaultu překvapí: `v` nezačíná výběr, ale přepíná
-obdélník (totéž co `C-v`), a `y` není nabindované vůbec. Obojí dorovnávají
-dva bindingy v [Do systémové schránky](#do-systémové-schránky) — a o
-obdélník přemapováním `v` nepřijdeš, `C-v` zůstává.
-
-### Myš
-
-Se `set -g mouse on` (je v [doporučené konfiguraci](#konfigurace)) obsluhuje
-historii i myš, bez jediného vlastního bindingu:
-
-- **Kolečko** nahoru samo vstoupí do copy mode a scrolluje (po 5 řádcích);
-  doscrollováním zpátky dolů copy mode zase skončí.
-- **Tažení** vybírá; puštěním tlačítka se výběr zkopíruje a copy mode
-  skončí.
-- **Dvojklik / trojklik** zkopíruje slovo / řádek pod kurzorem.
-- **Shift + tažení** jde mimo tmux: terminál událost tmuxu vůbec nepředá
-  a udělá svůj nativní výběr (v iTerm2 s `Option`, v Terminal.app s `Fn`).
-
-Kopírování myší jde přes tytéž cesty jako klávesy — výběr skončí v tmux
-bufferu a s nastaveným `copy-command` i v systémové schránce (viz
-[Do systémové schránky](#do-systémové-schránky)).
-
-### Novinky posledních verzí
-
-Tři schopnosti, které starší návody neznají (minimální verze tmuxu
-v závorkách):
-
-- **Stav hledání je ve formátech.** `#{search_present}` (od 3.2) říká,
-  jestli se vůbec hledá; `#{search_count}` (od 3.5) počet shod
-  (`#{search_count_partial}` = 1, dokud tmux ještě dopočítává). Hlavně pro
-  skripty — `display -p` v copy mode je přečte.
-- **OSC 8 hyperlinky** (od 3.4). Escape sekvence, kterou program k vypsanému
-  textu přibalí neviditelné URL — obdoba `<a href>` z HTML pro terminál: na
-  obrazovce je jméno souboru, kliknutím (typicky Ctrl+klik) se otevře cíl.
-  Vypisuje je třeba `ls --hyperlink` nebo gcc v chybových hláškách; tmux si
-  je ukládá a dává formátům: `#{mouse_hyperlink}` je cíl odkazu pod myší,
-  `#{copy_cursor_hyperlink}` (od 3.5) pod kurzorem v copy mode. Otevírání
-  jednou klávesou:
-
-  ```tmux
-  bind -T copy-mode-vi O if -F '#{copy_cursor_hyperlink}' 'run-shell -b "xdg-open \"#{copy_cursor_hyperlink}\""'
-  ```
-
-  (Velké `O` — malé `o` má v copy-mode-vi default, skok na druhý konec
-  výběru. A `if -F` zajistí, že stisk mimo odkaz neudělá nic, místo chyby
-  z `xdg-open ""`.)
-
-  Interně to funguje vždy; aby odkazy byly klikací i ve vnějším terminálu,
-  musí mít featuru `hyperlinks` — tmux ji u známých terminálů pozná sám,
-  vynutí se přes `set -ga terminal-features ",*:hyperlinks"` (k zápisu viz
-  [Konfigurace](#konfigurace)).
-
-- **Skoky po promptech** (od 3.4). `send -X next-prompt` / `previous-prompt`
-  skáčou historií z promptu na prompt — místo scrollování „o obrazovku výš
-  a hledat, kde příkaz začal“. Chce to shell integraci: shell musí prompty
-  značkovat sekvencí OSC 133 (`\033]133;A\033\\` v `PS1`), jinak klávesy
-  neudělají nic. Volba `-o` skočí místo promptu na začátek výstupu příkazu.
-  Defaultní binding není:
-
-  ```tmux
-  bind -T copy-mode-vi K send -X previous-prompt
-  bind -T copy-mode-vi J send -X next-prompt
-  ```
-
-### Do systémové schránky
-
-tmux má vlastní buffery oddělené od schránky systému — kopírování v copy
-mode plní je, ne schránku. Do schránky vedou dvě cesty.
-
-**`copy-command`** (od 3.2): všechny defaultní kopírovací akce (`Enter`,
-`M-w`, puštění myši, dvojklik, …) jsou interně `copy-pipe` a bez argumentu
-pošlou výběr do příkazu z téhle volby. Jeden řádek podle systému — a k tomu
-dorovnání vimového `v`/`y` z tabulky výše:
-
-```tmux
-set -s copy-command 'wl-copy'                        # Wayland
-# set -s copy-command 'xclip -selection clipboard'   # X11
-# set -s copy-command 'pbcopy'                       # macOS
-
-bind -T copy-mode-vi v send -X begin-selection
-bind -T copy-mode-vi y send -X copy-pipe-and-cancel  # bez argumentu → copy-command
-```
-
-(Starší návody místo `copy-command` dávají příkaz přímo do bindingu —
-`… copy-pipe-and-cancel "xclip -selection clipboard"`. Funguje to taky, ale
-platí to jen pro tu jednu klávesu; myš a emacs klávesy schránku neplní.)
-
-**OSC 52** (volba `set-clipboard`): tmux pošle výběr do schránky escape
-sekvencí přes vnější terminál, takže funguje i přes SSH bez `xclip` na
-serveru. Default `external` to zkouší sám od sebe — pokud vnější terminál
-OSC 52 podporuje a má povolenou (schránka musí projít oběma stranami
-překladu, viz [tmux je uprostřed](#tmux-je-uprostřed)), možná ti schránka
-funguje i bez `copy-command`. Hodnota `on` navíc totéž dovolí programům
-běžícím uvnitř panes.
-
-### Buffery ze shellu
-
-Buffer není jen mezipaměť pro `prefix ]` — jde k němu ze skriptů, takže
-copy mode má most do [Automatizace](#automatizace-a-skriptování):
-
-```bash
-tmux save-buffer -                # vypíše nejnovější buffer na stdout
-tmux set-buffer 'text'            # naplní buffer zvenčí
-tmux paste-buffer -t prace:0.1    # vloží buffer do konkrétního panu
-tmux list-buffers                 # bufferů je celý stack, tohle je výpis
-```
-
-A opačným směrem: `capture-pane` bez `-p` uloží obrazovku právě do bufferu
-(viz [Přečíst výstup](#přečíst-výstup)) — buffer je společný meziprostor
-copy mode, myši i skriptů.
-
----
-
 ## Ostatní užitečné
 
 | Zkratka | Co dělá |
@@ -1284,10 +1331,10 @@ Pár detailů, které v tom zápisu nejsou samozřejmé:
 - `#{pane_current_path}` v bindingu se vyhodnotí až při stisku zkratky, ne při
   načtení konfigurace.
 - `detach-on-destroy off` oceníš, když sessions často zabíjíš a zakládáš
-  (typicky se sessionizer skriptem): po `kill-session` tě tmux přepne do
-  naposledy aktivní session, místo aby tě vyhodil na plochu. Ohleduplnější
-  hodnota `no-detached` přepíná jen do sessions, ke kterým nikdo připojený
-  není — a když taková není, normálně tě odpojí.
+  (typicky se [sessionizer skriptem](#sessionizer)): po `kill-session` tě
+  tmux přepne do naposledy aktivní session, místo aby tě vyhodil na plochu.
+  Ohleduplnější hodnota `no-detached` přepíná jen do sessions, ke kterým
+  nikdo připojený není — a když taková není, normálně tě odpojí.
 
 ### tmux je uprostřed
 
@@ -1543,6 +1590,14 @@ další) a `keep-group` (nezruš poslední session skupiny).
 
 Claude Code v tmuxu funguje, ale pár věcí se defaultně rozbije. Následující je
 podle [oficiální dokumentace](https://code.claude.com/docs/en/terminal-config).
+
+Nejdřív ale důvod, proč tu kombinaci vůbec chtít: dlouho běžící agent je
+přesně ten typ procesu, který nechceš mít přivázaný k jednomu oknu
+terminálu. Když Claude Code běží v tmuxu na serveru, můžeš zavřít notebook,
+po cestě se k session připojit z mobilu nebo tabletu (např. Blink) a agenta
+najdeš přesně tam, kde jsi ho nechal — odpovíš mu na otázku, zkontroluješ
+průběh a zase se odpojíš. Viz
+[Stejné terminály odkudkoli](#na-co-je-to-dobré).
 
 ### Nutné minimum do `~/.tmux.conf`
 
